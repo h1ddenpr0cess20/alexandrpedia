@@ -1,0 +1,16 @@
+{
+  "name": "alexandrpedia",
+  "version": "0.1.0",
+  "description": "A bookcase of AI topics, people and companies: each article from Wikipedia or Grokipedia is a book on the shelf, and a click opens it to read.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\"",
+    "check-titles": "node scripts/check-titles.mjs",
+    "serve": "python3 -m http.server 8080"
+  },
+  "license": "UNLICENSED"
+}

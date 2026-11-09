@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Alexandrpedia</title>
+    <style>
+      :root { --bg: #0b0e1d; --text: #e8e6e1; --dim: #9aa0b2; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 15px/1.4 Georgia, 'Times New Roman', serif; }
+      body { overflow: hidden; }
+      #host { position: fixed; inset: 0; }
+      #status { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); max-width: min(680px, 92vw); padding: 8px 14px; background: rgba(11, 14, 29, 0.78); border: 1px solid #262c3a; border-radius: 8px; text-align: center; pointer-events: none; }
+      #hint { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); color: var(--dim); font-size: 13px; pointer-events: none; white-space: nowrap; }
+      h1 { position: fixed; top: 12px; left: 16px; margin: 0; font: normal 18px Georgia, serif; letter-spacing: 0.03em; pointer-events: none; }
+      @media (max-width: 600px) { #hint { white-space: normal; width: 92vw; text-align: center; } }
+    </style>
+  </head>
+  <body>
+    <div id="host"></div>
+    <h1>Alexandrpedia</h1>
+    <div id="status" hidden></div>
+    <div id="hint">Click a book to take it down and read it · click a page's side to turn it · click the room or press Esc to put it back</div>
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>

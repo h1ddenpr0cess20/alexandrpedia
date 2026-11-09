@@ -1,0 +1,3 @@
+[submodule "vendor/madness-engine"]
+	path = vendor/madness-engine
+	url = https://github.com/h1ddenpr0cess20/madness-engine
