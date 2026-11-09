@@ -169,13 +169,13 @@ function takeDown(record) {
 
 function putBack(record) {
   const { book, home } = record;
-  book.close();
+  book.pose({ open: 0, turn: 0 }); // shut at once: it is going back on the shelf, not closing in front of anyone
   scene.remove(book.group);
   home.parent.add(book.group);
   book.group.position.copy(home.position);
   book.group.quaternion.copy(home.quaternion);
   book.group.scale.copy(home.scale);
-  moving.add(record);
+  moving.delete(record);
   if (reading === record) reading = null;
   focusOn(SHELF_TARGET);
 }
