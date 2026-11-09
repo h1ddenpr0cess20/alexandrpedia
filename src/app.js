@@ -23,16 +23,17 @@ import { loadOrFallback } from './library.js';
 // Not walnut: the engine paints walnut from a photograph, on canvases WebGPU refuses to copy before the photo has decoded.
 const SPECIES = { wikipedia: 'oak', grokipedia: 'mahogany' };
 
-const DESK_AT = { x: 2.7, z: 1.5 };
+/** A reading desk for each encyclopedia, in the wood of its bookcase, to either side of the shelves. */
+const DESKS = { wikipedia: { x: -2.6, z: 1.6 }, grokipedia: { x: 2.6, z: 1.6 } };
 const DESK_HEIGHT = 0.75;
-/** Where a book hangs when it is read: in midair over the desk, at the model's own size. */
-const READ_AT = new GFX.Vector3(DESK_AT.x, DESK_HEIGHT + 0.42, DESK_AT.z);
+/** Where a book hangs when it is read: in midair over its own encyclopedia's desk, at the model's own size. */
+const readAt = (sourceId) => new GFX.Vector3(DESKS[sourceId].x, DESK_HEIGHT + 0.42, DESKS[sourceId].z);
 /** Standing upright, its cover facing the reader (the model lies flat on the x-z plane). */
 const READ_UPRIGHT = new GFX.Quaternion().setFromAxisAngle(new GFX.Vector3(1, 0, 0), Math.PI / 2);
-const SHELF_TARGET = new GFX.Vector3(0, 0.8, 0.8);
+const SHELF_TARGET = new GFX.Vector3(0, 1.05, 0.8);
 
 // A view that can go from nearly level to nearly overhead, and in close or far out.
-const { createView } = defineView({ home: { yaw: 0, pitch: 0.12, zoom: 0.65 }, limits: { pitch: [-0.02, 1.35], zoom: [0.15, 2.4] } });
+const { createView } = defineView({ home: { yaw: 0, pitch: 0.12, zoom: 0.65 }, limits: { pitch: [-0.02, 1.35], zoom: [0.03, 2.4] } });
 
 const loading = document.getElementById('loading');
 const loadingNote = document.getElementById('loading-note');
@@ -54,6 +55,10 @@ const stage = await createStage(document.getElementById('host'), {
   view: createView(),
 });
 const { scene, camera, renderer } = stage;
+// Close enough to read a spine or a page: the stage's near plane (0.3 m) would cut the book away.
+camera.near = 0.02;
+camera.far = 120;
+camera.updateProjectionMatrix();
 stage.target.copy(SHELF_TARGET);
 stage.view.step(0, true);
 
@@ -94,21 +99,23 @@ function furnish(piece, x, z, turn = 0) {
   return piece;
 }
 
-// Furniture stands to the sides, so the bookcases are never hidden: a reading desk and chairs on the right, an armchair and tables on the left.
-furnish(createWoodTable(GFX, { kind: 'desk', species: 'oak', finish: 'lacquered', width: 1.5, depth: 0.75, height: DESK_HEIGHT }), DESK_AT.x, DESK_AT.z);
-furnish(createWoodChair(GFX, { kind: 'dining', species: 'oak', finish: 'lacquered' }), DESK_AT.x, DESK_AT.z + 0.85, Math.PI);
-furnish(createWoodChair(GFX, { kind: 'windsor', species: 'mahogany', finish: 'lacquered' }), 4.1, 1.3, -Math.PI / 2);
-furnish(createWoodChair(GFX, { kind: 'stool', species: 'oak', finish: 'sanded' }), 1.9, 3.0, 0.4);
-furnish(createWoodChair(GFX, { kind: 'armchair', species: 'mahogany', finish: 'lacquered' }), -2.6, 1.0, Math.PI / 2);
-furnish(createWoodTable(GFX, { kind: 'coffee', species: 'oak', finish: 'sanded' }), -2.7, 2.5);
-furnish(createWoodTable(GFX, { kind: 'side', species: 'mahogany', finish: 'lacquered' }), -3.8, 1.2);
-
-await loadingStep('Shelving the books…');
+// Furniture stands to the sides, so the bookcases are never hidden. Each encyclopedia has a matching nook:
+// a reading desk and its chair, pulled up, a stool and a side table, all in the wood of that bookcase.
+for (const source of SOURCES) {
+  const { x, z } = DESKS[source.id];
+  const species = SPECIES[source.id];
+  const wood = { species, finish: 'lacquered' };
+  const inward = x < 0 ? 1 : -1; // toward the middle of the room
+  furnish(createWoodTable(GFX, { ...wood, kind: 'desk', width: 1.5, depth: 0.75, height: DESK_HEIGHT }), x, z);
+  furnish(createWoodChair(GFX, { ...wood, kind: 'dining' }), x, z + 0.85, Math.PI);
+  furnish(createWoodChair(GFX, { ...wood, kind: 'armchair' }), x - inward * 1.7, z + 0.3, inward * Math.PI / 2 + Math.PI);
+  furnish(createWoodTable(GFX, { ...wood, kind: 'side' }), x - inward * 1.7, z + 1.4);
+}
 
 // Two bookcases side by side against the wall, the Wikipedia one on the left.
 const cases = {};
 SOURCES.forEach((source, i) => {
-  const shelf = createBookcase(GFX, { species: SPECIES[source.id], shelves: 3, width: 0.8, depth: 0.34, height: 1.5 });
+  const shelf = createBookcase(GFX, { species: SPECIES[source.id], shelves: 5, width: 0.8, depth: 0.34, height: 2.2 });
   shelf.group.position.set(i === 0 ? -0.45 : 0.45, 0, 0);
   scene.add(shelf.group);
   cases[source.id] = shelf;
@@ -125,6 +132,7 @@ for (const source of SOURCES) {
       title: entry.title,
       subtitle: `${source.name} · ${KINDS[entry.kind]}`,
       deferPages: true,
+      textureSize: 512, // a shelf holds a hundred books; a 2048 cover for each would not fit in memory
     });
     const record = { entry, source, book, key: `${source.id}:${keyOf(entry)}`, home: null };
     books.set(record.key, record);
@@ -159,12 +167,12 @@ function takeDown(record) {
   const { book, home } = record;
   home.parent.remove(book.group);
   scene.add(book.group);
-  book.group.position.copy(READ_AT);
+  book.group.position.copy(readAt(record.source.id));
   book.group.quaternion.copy(READ_UPRIGHT);
   book.group.scale.setScalar(1);
   reading = record;
   moving.add(record);
-  focusOn(READ_AT);
+  focusOn(readAt(record.source.id));
 }
 
 function putBack(record) {

@@ -10,8 +10,9 @@ await mkdir(dir, { recursive: true });
 let failed = 0;
 for (const entry of CATALOG) {
   try {
-    const article = await GROKIPEDIA.fetch(entry.title, { baseDelay: 2000, retries: 5 });
-    await writeFile(new URL(`${encodeURIComponent(slugOf(entry.title))}.json`, dir), `${JSON.stringify({ ...article, fetchedAt: new Date().toISOString() }, null, 1)}\n`);
+    const title = entry.titles?.grokipedia ?? entry.title;
+    const article = await GROKIPEDIA.fetch(title, { baseDelay: 2000, retries: 5 });
+    await writeFile(new URL(`${encodeURIComponent(slugOf(title))}.json`, dir), `${JSON.stringify({ ...article, fetchedAt: new Date().toISOString() }, null, 1)}\n`);
     console.log(`ok   ${entry.title} (${article.text.length} characters)`);
   } catch (err) {
     failed++;

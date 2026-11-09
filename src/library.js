@@ -4,6 +4,7 @@
  * once per visit.
  */
 
+import { keyOf } from './catalog.js';
 import { fallbackFor } from './fallbacks.js';
 import { SOURCES, sourceById } from './sources.js';
 
@@ -32,12 +33,13 @@ export function pageCountFor(text) {
 export async function loadArticle(sourceId, entry, { fetchOptions, source: given } = {}) {
   const source = given ?? sourceById(sourceId);
   if (!source) throw new Error(`Unknown source "${sourceId}"`);
-  const id = `${source.id}:${entry.key}`;
+  const key = entry.key ?? keyOf(entry); // catalog entries carry no key of their own: without this every book shared one cache slot
+  const id = `${source.id}:${key}`;
   if (!cache.has(id)) {
-    const promise = source.fetch(entry.title, fetchOptions).then((article) => ({
+    const promise = source.fetch(entry.titles?.[source.id] ?? entry.title, fetchOptions).then((article) => ({
       ...article,
       kind: entry.kind,
-      key: entry.key,
+      key,
       pageCount: pageCountFor(article.text),
     }));
     cache.set(id, promise);
@@ -64,7 +66,7 @@ export async function loadOrFallback(sourceId, entry, options = {}) {
       text: book.text,
       license: null,
       kind: entry.kind,
-      key: `${book.key}:${sourceId}:${entry.key}`,
+      key: `${book.key}:${sourceId}:${entry.key ?? keyOf(entry)}`,
       pageCount: pageCountFor(book.text),
       fallback: true,
       failure: `${sourceId}: ${error.message}`,
