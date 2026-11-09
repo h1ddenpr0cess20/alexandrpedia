@@ -178,7 +178,7 @@ function takeDown(record) {
 
 function putBack(record) {
   const { book, home } = record;
-  book.pose({ open: 0, turn: 0 }); // shut at once: it is going back on the shelf, not closing in front of anyone
+  book.close({ instant: true }); // shut at once: it is going back on the shelf, not closing in front of anyone
   scene.remove(book.group);
   home.parent.add(book.group);
   book.group.position.copy(home.position);
