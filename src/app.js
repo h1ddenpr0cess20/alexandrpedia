@@ -9,6 +9,7 @@
 import * as GFX from '../vendor/madness-engine/src/gfx/index.js';
 import { createStage } from '../vendor/madness-engine/src/stage.js';
 import { paintRoom } from '../vendor/madness-engine/src/textures/rooms/studio.js';
+import { createView } from '../vendor/madness-engine/src/views/arcade.js';
 import { createBookcase, stockBooks } from '../vendor/madness-engine/src/props/bookcase.js';
 import { createBook } from '../vendor/madness-engine/src/props/book.js';
 import { CATALOG, KINDS, keyOf } from './catalog.js';
@@ -26,7 +27,12 @@ const SHELF_TARGET = new GFX.Vector3(0, 1.0, 0);
 const status = document.getElementById('status');
 const say = (text = '') => { status.textContent = text; status.hidden = !text; };
 
-const stage = await createStage(document.getElementById('host'), { room: paintRoom(), shadowSize: 1024, fixtures: 0, label: 'alexandrpedia', lens: { distance: 17, fov: 36 } });
+// A nearly level view, facing the shelves: an upright book is seen as it is, not foreshortened by a steep look-down.
+const stage = await createStage(document.getElementById('host'), {
+  room: paintRoom(), shadowSize: 1024, fixtures: 0, label: 'alexandrpedia',
+  lens: { distance: 7.5, fov: 36 },
+  view: createView({ yaw: 0, pitch: 0.08, zoom: 1 }),
+});
 const { scene, camera, renderer } = stage;
 camera.position.set(0, 1.45, 5.2);
 stage.target.copy(SHELF_TARGET);
@@ -232,5 +238,6 @@ renderer.setAnimationLoop((now) => {
     if (record !== reading && record.book.openness < 0.001) moving.delete(record);
   }
   if (reading) reading.book.update(dt);
+  stage.look();   // place the camera on the target, from the view
   stage.render();
 });
