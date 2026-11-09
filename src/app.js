@@ -34,9 +34,20 @@ const SHELF_TARGET = new GFX.Vector3(0, 0.8, 0.8);
 // A view that can go from nearly level to nearly overhead, and in close or far out.
 const { createView } = defineView({ home: { yaw: 0, pitch: 0.12, zoom: 0.65 }, limits: { pitch: [-0.02, 1.35], zoom: [0.15, 2.4] } });
 
+const loading = document.getElementById('loading');
+const loadingNote = document.getElementById('loading-note');
+const loadingStep = (text) => { loadingNote.textContent = text; return new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0))); };
+const loadingFailed = (error) => {
+  loading.classList.add('failed');
+  loadingNote.textContent = `The library could not open: ${error?.message ?? error}`;
+};
+globalThis.addEventListener('error', (e) => { if (!loading.classList.contains('done')) loadingFailed(e.error ?? e.message); });
+globalThis.addEventListener('unhandledrejection', (e) => { if (!loading.classList.contains('done')) loadingFailed(e.reason); });
+
 const status = document.getElementById('status');
 const say = (text = '') => { status.textContent = text; status.hidden = !text; };
 
+await loadingStep('Starting the renderer…');
 const stage = await createStage(document.getElementById('host'), {
   room: paintRoom(), shadowSize: 2048, fixtures: 0, label: 'alexandrpedia',
   lens: { distance: 7.5, fov: 36 },
@@ -47,6 +58,8 @@ stage.target.copy(SHELF_TARGET);
 stage.view.step(0, true);
 
 // ———————————————————————————————————————————— the room
+
+await loadingStep('Furnishing the room…');
 
 const floor = new GFX.Mesh(
   new GFX.CircleGeometry(9, 64),
@@ -89,6 +102,8 @@ furnish(createWoodChair(GFX, { kind: 'stool', species: 'oak', finish: 'sanded' }
 furnish(createWoodChair(GFX, { kind: 'armchair', species: 'mahogany', finish: 'lacquered' }), -2.6, 1.0, Math.PI / 2);
 furnish(createWoodTable(GFX, { kind: 'coffee', species: 'oak', finish: 'sanded' }), -2.7, 2.5);
 furnish(createWoodTable(GFX, { kind: 'side', species: 'mahogany', finish: 'lacquered' }), -3.8, 1.2);
+
+await loadingStep('Shelving the books…');
 
 // Two bookcases side by side against the wall, the Wikipedia one on the left.
 const cases = {};
@@ -332,6 +347,7 @@ globalThis.addEventListener('keydown', (e) => {
 
 const GOAL = new GFX.Vector3();
 let last = performance.now();
+let shown = false;
 renderer.setAnimationLoop((now) => {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
@@ -346,4 +362,5 @@ renderer.setAnimationLoop((now) => {
   stage.view.step(dt);
   stage.look();   // place the camera on the target, from the view
   stage.render();
+  if (!shown) { shown = true; loading.classList.add('done'); setTimeout(() => loading.remove(), 800); }
 });
