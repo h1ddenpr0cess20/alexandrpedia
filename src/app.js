@@ -132,6 +132,7 @@ for (const source of SOURCES) {
       title: entry.title,
       subtitle: `${source.name} · ${KINDS[entry.kind]}`,
       deferPages: true,
+      bookplate: false, // no ex libris inside the cover
       textureSize: 512, // a shelf holds a hundred books; a 2048 cover for each would not fit in memory
     });
     const record = { entry, source, book, key: `${source.id}:${keyOf(entry)}`, home: null };
