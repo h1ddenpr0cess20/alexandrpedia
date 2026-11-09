@@ -11,16 +11,31 @@
       body { overflow: hidden; }
       #host { position: fixed; inset: 0; }
       #status { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); max-width: min(680px, 92vw); padding: 8px 14px; background: rgba(11, 14, 29, 0.78); border: 1px solid #262c3a; border-radius: 8px; text-align: center; pointer-events: none; }
+      #host canvas { display: block; cursor: grab; }
       #hint { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); color: var(--dim); font-size: 13px; pointer-events: none; white-space: nowrap; }
       h1 { position: fixed; top: 12px; left: 16px; margin: 0; font: normal 18px Georgia, serif; letter-spacing: 0.03em; pointer-events: none; }
+      #loading { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: var(--bg); transition: opacity 0.6s ease; }
+      #loading.done { opacity: 0; pointer-events: none; }
+      #loading .title { font-size: 28px; letter-spacing: 0.06em; }
+      #loading .bar { width: min(260px, 60vw); height: 3px; background: #262c3a; border-radius: 2px; overflow: hidden; }
+      #loading .bar i { display: block; height: 100%; width: 40%; background: var(--text); border-radius: 2px; animation: slide 1.2s ease-in-out infinite; }
+      #loading .note { color: var(--dim); font-size: 13px; min-height: 1.4em; text-align: center; max-width: 80vw; }
+      #loading.failed .bar i { animation: none; width: 100%; background: #c0584f; }
+      @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
+      @media (prefers-reduced-motion: reduce) { #loading .bar i { animation: none; width: 100%; opacity: 0.5; } }
       @media (max-width: 600px) { #hint { white-space: normal; width: 92vw; text-align: center; } }
     </style>
   </head>
   <body>
+    <div id="loading" role="status" aria-live="polite">
+      <div class="title">Alexandrpedia</div>
+      <div class="bar"><i></i></div>
+      <div class="note" id="loading-note">Opening the library…</div>
+    </div>
     <div id="host"></div>
     <h1>Alexandrpedia</h1>
     <div id="status" hidden></div>
-    <div id="hint">Click a book to take it down and read it · click a page's side to turn it · click the room or press Esc to put it back</div>
+    <div id="hint">Click a book to read it · click a page's side to turn it · Esc puts it back · drag to look around, right-drag or Shift-drag to pan, scroll or pinch to zoom, double-click to reset</div>
     <script type="module" src="./src/app.js"></script>
   </body>
 </html>

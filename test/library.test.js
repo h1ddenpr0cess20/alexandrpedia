@@ -83,3 +83,13 @@ test('each kind of failure has its book', () => {
   assert.equal(fallbackFor(new TypeError('fetch failed')).title, 'Please Stand By');
   assert.equal(fallbackFor({ status: 503 }).title, 'Scheduled Maintenance');
 });
+
+test('catalog entries, which have no key of their own, are cached apart', async () => {
+  clearCache();
+  const source = { id: 'fake', fetch: async (title) => ({ source: 'fake', title, url: null, text: `about ${title}`, license: null }) };
+  const a = await loadArticle('fake', CATALOG[0], { source });
+  const b = await loadArticle('fake', CATALOG[1], { source });
+  assert.equal(a.title, CATALOG[0].title);
+  assert.equal(b.title, CATALOG[1].title);
+  assert.notEqual(a.key, b.key);
+});

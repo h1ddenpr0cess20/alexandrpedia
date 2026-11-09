@@ -4,8 +4,10 @@
  * once per visit.
  */
 
+import { keyOf } from './catalog.js';
 import { fallbackFor } from './fallbacks.js';
 import { SOURCES, sourceById } from './sources.js';
+import { keepSaved, readSaved } from './store.js';
 
 /** Roughly how many characters a page of the book holds. */
 export const CHARS_PER_PAGE = 1100;
@@ -32,14 +34,18 @@ export function pageCountFor(text) {
 export async function loadArticle(sourceId, entry, { fetchOptions, source: given } = {}) {
   const source = given ?? sourceById(sourceId);
   if (!source) throw new Error(`Unknown source "${sourceId}"`);
-  const id = `${source.id}:${entry.key}`;
+  const key = entry.key ?? keyOf(entry); // catalog entries carry no key of their own: without this every book shared one cache slot
+  const id = `${source.id}:${key}`;
   if (!cache.has(id)) {
-    const promise = source.fetch(entry.title, fetchOptions).then((article) => ({
-      ...article,
-      kind: entry.kind,
-      key: entry.key,
-      pageCount: pageCountFor(article.text),
-    }));
+    // Only a book that is chosen is ever loaded: first what was kept from an earlier visit, then the source.
+    const promise = (async () => {
+      const kept = given ? undefined : await readSaved(id);
+      if (kept?.text) return kept;
+      const article = await source.fetch(entry.titles?.[source.id] ?? entry.title, fetchOptions);
+      const made = { ...article, kind: entry.kind, key, pageCount: pageCountFor(article.text) };
+      if (!given) keepSaved(id, made);
+      return made;
+    })();
     cache.set(id, promise);
     // A failed load is not kept, so a retry asks again.
     promise.catch(() => cache.delete(id));
@@ -64,7 +70,7 @@ export async function loadOrFallback(sourceId, entry, options = {}) {
       text: book.text,
       license: null,
       kind: entry.kind,
-      key: `${book.key}:${sourceId}:${entry.key}`,
+      key: `${book.key}:${sourceId}:${entry.key ?? keyOf(entry)}`,
       pageCount: pageCountFor(book.text),
       fallback: true,
       failure: `${sourceId}: ${error.message}`,

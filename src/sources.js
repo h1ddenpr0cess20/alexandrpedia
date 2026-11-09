@@ -1,9 +1,11 @@
 /**
  * The encyclopedias the books come from. Each source turns a title into
  * `{ source, title, url, text, license }`, where `text` is the book's form (see
- * text.js). Both are read from the browser, so both must allow cross-origin
- * requests: Wikipedia's API does with `origin=*`, and Grokipedia's pages are
- * fetched as they are served.
+ * text.js). No proxy is used. Wikipedia's API allows cross-origin requests with
+ * `origin=*`, so the browser asks it directly. Grokipedia sends no CORS headers,
+ * so a browser cannot read it; its articles are fetched ahead of time from Node
+ * (`npm run snapshot-grokipedia`, scripts/snapshot-grokipedia.mjs) into
+ * data/grokipedia/, and the browser reads those from our own origin.
  */
 
 import { ArticleNotFound, HttpError, fetchWithRetry } from './fetch.js';
@@ -56,6 +58,14 @@ export const GROKIPEDIA = Object.freeze({
   pageUrl: (title) => `https://grokipedia.com/page/${encodeURIComponent(slugOf(title))}`,
   async fetch(title, options = {}) {
     const url = GROKIPEDIA.pageUrl(title);
+    if (!NODE) {
+      // The snapshot, from our own origin.
+      const file = new URL(`data/grokipedia/${encodeURIComponent(slugOf(title))}.json`, globalThis.document?.baseURI ?? globalThis.location?.href);
+      const res = await fetchWithRetry(file.href, options);
+      if (res.status === 404) throw new ArticleNotFound(GROKIPEDIA.name, title);
+      if (!res.ok) throw new HttpError(file.href, res.status);
+      return res.json();
+    }
     const res = await fetchWithRetry(url, { ...options, init: headers ? { headers } : undefined });
     if (res.status === 404) throw new ArticleNotFound(GROKIPEDIA.name, title);
     if (!res.ok) throw new HttpError(url, res.status);
