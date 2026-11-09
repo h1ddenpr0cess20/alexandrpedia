@@ -164,17 +164,6 @@ let reading = null;       // the record of the book on the table, if any
 let token = 0;            // which selection is current, so a slow fetch cannot overwrite a newer one
 const moving = new Set(); // books that are opening or closing
 
-/**
- * The engine measures each page's bounding sphere the first time it is picked, then keeps it: a page that
- * turns over to the other side drifts out of that sphere and can no longer be clicked, so a click on it
- * falls through to the room and puts the book back on its shelf. Clearing the cache lets the next pick
- * measure the pages where they are now.
- */
-function forgetStalePickBounds(book) {
-  for (const leaf of book.leaves) leaf.geometry.boundingSphere = null;
-  book.cover.geometry.boundingSphere = null;
-}
-
 function takeDown(record) {
   const { book, home } = record;
   home.parent.remove(book.group);
@@ -190,7 +179,6 @@ function takeDown(record) {
 function putBack(record) {
   const { book, home } = record;
   book.close({ instant: true }); // shut at once: it is going back on the shelf, not closing in front of anyone
-  forgetStalePickBounds(book);
   scene.remove(book.group);
   home.parent.add(book.group);
   book.group.position.copy(home.position);
@@ -375,7 +363,6 @@ renderer.setAnimationLoop((now) => {
   last = now;
   for (const record of moving) {
     record.book.update(dt);
-    forgetStalePickBounds(record.book);
     if (record !== reading && record.book.openness < 0.001) moving.delete(record);
   }
   if (reading) reading.book.update(dt);
