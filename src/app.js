@@ -204,6 +204,7 @@ async function select(key) {
   record.book.setStyle({ title: article.title, subtitle: `${record.source.name} · ${KINDS[record.entry.kind]}` });
   record.book.setText(article.text);
   record.book.open();
+  wake();
   say(article.fallback ? `Could not fetch this one, so a stand-in book is on the table. (${article.failure})` : '');
 }
 
@@ -355,6 +356,26 @@ globalThis.addEventListener('keydown', (e) => {
 
 // ———————————————————————————————————————————— the frame loop
 
+// The picture is drawn only when something has changed: a book or the camera is moving, or the viewer has
+// touched the page, or the page has been resized or has new text. A still room costs nothing to leave alone.
+let dirty = true;
+function wake() { dirty = true; }
+for (const type of ['pointerdown', 'pointermove', 'pointerup', 'wheel', 'keydown', 'dblclick']) globalThis.addEventListener(type, wake, { passive: true });
+new ResizeObserver(wake).observe(document.getElementById('host'));
+
+/** A book's pose as numbers: if it is the same as last frame, it is at rest. */
+function poseOf(book) {
+  const out = [book.openness];
+  for (const L of book.leaves) out.push(L.turn, L.curl);
+  return out;
+}
+function restless(record) {
+  const was = record.pose;
+  const now = poseOf(record.book);
+  record.pose = now;
+  return !was || now.some((v, i) => Math.abs(v - was[i]) > 1e-7);
+}
+
 const GOAL = new GFX.Vector3();
 let last = performance.now();
 let shown = false;
@@ -363,13 +384,18 @@ renderer.setAnimationLoop((now) => {
   last = now;
   for (const record of moving) {
     record.book.update(dt);
+    if (restless(record)) dirty = true;
     if (record !== reading && record.book.openness < 0.001) moving.delete(record);
   }
-  if (reading) reading.book.update(dt);
   // The camera's aim glides to where it should look; the view eases its own turn and zoom.
   GOAL.copy(focus).add(panned);
+  const view = stage.view;
+  const eased = Math.abs(view.yaw - view.aim.yaw) > 1e-6 || Math.abs(view.pitch - view.aim.pitch) > 1e-6 || Math.abs(view.zoom - view.aim.zoom) > 1e-6;
+  if (eased || stage.target.distanceToSquared(GOAL) > 1e-10) dirty = true;
   stage.target.lerp(GOAL, 1 - Math.exp(-10 * dt));
-  stage.view.step(dt);
+  view.step(dt);
+  if (!dirty) return;
+  dirty = false;
   stage.look();   // place the camera on the target, from the view
   stage.render();
   if (!shown) { shown = true; loading.classList.add('done'); setTimeout(() => loading.remove(), 800); }
