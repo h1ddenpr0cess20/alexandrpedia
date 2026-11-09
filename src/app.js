@@ -186,6 +186,7 @@ function putBack(record) {
   book.group.scale.copy(home.scale);
   moving.delete(record);
   if (reading === record) reading = null;
+  token++; // a fetch still on its way for this book must not open it on the shelf
   focusOn(SHELF_TARGET);
 }
 
@@ -199,7 +200,7 @@ async function select(key) {
   say(`Fetching ${record.entry.title} from ${record.source.name}…`);
 
   const article = await loadOrFallback(record.source.id, record.entry);
-  if (current !== token) return; // another book was chosen meanwhile
+  if (current !== token || reading !== record) return; // another book was chosen, or this one was put back, meanwhile
   record.book.setStyle({ title: article.title, subtitle: `${record.source.name} · ${KINDS[record.entry.kind]}` });
   record.book.setText(article.text);
   record.book.open();
