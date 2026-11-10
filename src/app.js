@@ -51,6 +51,17 @@ function pointInBay(bay, x, z, y = 0) {
 }
 
 /** Where a book stands when it is taken down: above its table, at reading height. */
+/**
+ * Which way an opened book faces, as a view yaw. The view puts the camera at
+ * [sin yaw, ·, cos yaw] from its target, so turning the camera to this yaw stands
+ * you squarely in front of the book. Wall-nook books face the middle of the room;
+ * the central AI table faces the original front (+z).
+ */
+function readingYaw(record, position) {
+  if (record.sectionId === 'ai') return 0;
+  return Math.atan2(-position.x, -position.z);
+}
+
 function readingPlace(record) {
   const sourceIndex = SOURCES_IN_ORDER.indexOf(record.source.id);
   const bookHeight = DESK_HEIGHT + 0.42;
@@ -70,9 +81,9 @@ function readingPlace(record) {
 // A view that can go from nearly level to nearly overhead, and in close or far out.
 const VIEW_HOME_YAW = Math.PI / 4;
 const READ_UPRIGHT = new GFX.Quaternion().setFromAxisAngle(new GFX.Vector3(1, 0, 0), Math.PI / 2);
-// Upright, its cover facing the viewer's home view, so an open book stands squarely in front of you whichever table it is on.
-const READ_FACING_VIEWER = new GFX.Quaternion().setFromAxisAngle(AXIS_Y, VIEW_HOME_YAW).multiply(READ_UPRIGHT);
 const VIEW_HOME_ZOOM = 2.0;
+const BOOK_VIEW_ZOOM = 0.65;  // the original close reading distance
+const BOOK_VIEW_PITCH = 0.12; // the original near-level tilt, hovering just in front of the page
 const { createView, groundAxes } = defineView({
   home: { yaw: VIEW_HOME_YAW, pitch: 0.48, zoom: VIEW_HOME_ZOOM },
   limits: { pitch: [0.08, 1.35], zoom: [0.35, 2.4] },
@@ -530,10 +541,11 @@ function releasePerson(object) {
   });
 }
 
-// The figures are built once, half men and half women, and reused: building a figure takes seconds.
+// The figures are built once, half men and half women, and reused: building a figure takes seconds,
+// so they are only built the first time people are switched on.
 const figures = [];
-if (titles.length) {
-  await loadingStep('Seating the readers…');
+function buildFigures() {
+  if (figures.length) return;
   for (const sex of ['male', 'male', 'female', 'female']) {
     const man = createHuman(GFX, { sex, detail: 0.5 });
     const joint = FIGURES[sex].joints.ball;
@@ -638,13 +650,40 @@ function departReader() {
 
 // Readers come and go: every so often one walks in or walks out, between one and four at a time.
 function turnOver() {
+  turnOverTimer = null;
+  if (!peopleOn) return;
   const count = readers.size;
   if (count <= MIN_READERS) arriveReader();
   else if (count >= MAX_READERS) departReader();
   else if (Math.random() < 0.5) arriveReader();
   else departReader();
-  setTimeout(turnOver, 15000 + Math.random() * 30000);
+  turnOverTimer = setTimeout(turnOver, 15000 + Math.random() * 30000);
 }
+
+// People are off by default: they are the heaviest part of the scene. A toggle switches them on.
+let peopleOn = false;
+let turnOverTimer = null;
+function setPeople(on) {
+  peopleOn = on && titles.length > 0;
+  if (peopleOn) {
+    buildFigures();
+    if (!readers.size) { arriveReader(); arriveReader(); }
+    if (!turnOverTimer) turnOverTimer = setTimeout(turnOver, 15000 + Math.random() * 30000);
+  } else {
+    clearTimeout(turnOverTimer);
+    turnOverTimer = null;
+    for (const reader of [...readers.values()]) {
+      scene.remove(reader.slot.man.group);
+      reader.slot.inUse = false;
+      releasePerson(reader.copy.group);
+      readers.delete(reader.key);
+    }
+  }
+  peopleToggle.checked = peopleOn;
+  wake();
+}
+const peopleToggle = document.getElementById('people-toggle');
+peopleToggle.addEventListener('change', () => setPeople(peopleToggle.checked));
 
 // ———————————————————————————————————————————— taking a book down and putting it back
 
@@ -663,10 +702,16 @@ function takeDown(record) {
   home.parent.remove(book.group);
   scene.add(book.group);
   book.group.position.copy(place.position);
-  book.group.quaternion.copy(READ_FACING_VIEWER);
+  const yaw = readingYaw(record, place.position);
+  book.group.quaternion.setFromAxisAngle(AXIS_Y, yaw).multiply(READ_UPRIGHT);
   book.group.scale.setScalar(1);
   reading = record;
   moving.add(record);
+  // Move to the table and swing round to face the open book, close up and nearly level.
+  const aim = stage.view.aim;
+  aim.yaw = yaw + Math.round((aim.yaw - yaw) / (Math.PI * 2)) * Math.PI * 2;
+  aim.pitch = BOOK_VIEW_PITCH;
+  stage.view.zoomBy(BOOK_VIEW_ZOOM / aim.zoom);
   focusOn(place.position);
 }
 
@@ -680,6 +725,7 @@ function putBack(record) {
   book.group.scale.copy(home.scale);
   moving.delete(record);
   if (reading === record) reading = null;
+  stage.view.zoomBy(VIEW_HOME_ZOOM / stage.view.aim.zoom);
   focusOn(SHELF_TARGET);
   say(snapshotNotice);
 }
@@ -916,9 +962,4 @@ renderer.setAnimationLoop((now) => {
   if (!shown) { shown = true; loading.classList.add('done'); setTimeout(() => loading.remove(), 800); }
 });
 
-// The first two readers come in once the frame loop, and so `dirty`, is set up.
-if (titles.length) {
-  arriveReader();
-  arriveReader();
-  setTimeout(turnOver, 15000 + Math.random() * 30000);
-}
+// People stay off until the toggle switches them on (see setPeople).
