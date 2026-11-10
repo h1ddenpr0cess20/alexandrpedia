@@ -250,44 +250,27 @@ function paintDesign(ctx, width, height, palette) {
   }
 }
 
-function weave(ctx, width, height) {
-  const rand = random(1837);
-  ctx.save();
-
-  // Coarse, irregular yarn courses stay readable at shelf-camera distances;
-  // single-pixel noise and a dense bump map alias into visible shimmer.
-  for (let y = 0, row = 0; y < height; y += 8, row++) {
-    const offset = row % 2 ? 3 : 0;
-    ctx.fillStyle = row % 2 ? 'rgba(239, 218, 184, 0.11)' : 'rgba(37, 19, 27, 0.10)';
-    ctx.fillRect(0, y, width, 1.5);
-    for (let x = offset; x < width; x += 8) {
-      const slub = 2.5 + rand() * 2.5;
-      const shade = rand() < 0.5 ? 'rgba(240, 220, 188, 0.10)' : 'rgba(35, 18, 25, 0.09)';
-      ctx.fillStyle = shade;
-      ctx.fillRect(x + rand() * 1.5, y + 1.5 + rand() * 2, slub, 1.1);
-    }
-  }
-
-  // A sparse handful of longer wool fibres adds variation without pixel-scale speckle.
-  ctx.globalAlpha = 0.12;
-  for (let i = 0; i < 1800; i++) {
-    const x = rand() * width;
-    const y = rand() * height;
-    ctx.fillStyle = rand() < 0.5 ? '#f1dfbd' : '#291720';
-    ctx.fillRect(x, y, 4 + rand() * 5, 1.2);
-  }
-  ctx.restore();
-}
 function paintCanvas() {
   if (typeof document === 'undefined') return null;
-  const width = 1200, height = 1000;
+
+  // Draw the detailed motif at working resolution, then reduce it to the
+  // actual screen-space detail budget. Mipmaps handle further minification;
+  // no pixel-scale yarn/noise is baked into the final surface.
+  const source = document.createElement('canvas');
+  source.width = 1200;
+  source.height = 1000;
+  const sourceContext = source.getContext('2d');
+  if (!sourceContext) return null;
+  paintDesign(sourceContext, source.width, source.height, PALETTE);
+
   const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-  paintDesign(ctx, width, height, PALETTE);
-  weave(ctx, width, height);
+  canvas.width = 768;
+  canvas.height = 640;
+  const context = canvas.getContext('2d');
+  if (!context) return null;
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = 'high';
+  context.drawImage(source, 0, 0, source.width, source.height, 0, 0, canvas.width, canvas.height);
   return canvas;
 }
 
@@ -295,7 +278,9 @@ function textureOf(GFX, canvas) {
   if (!canvas) return null;
   const texture = new GFX.CanvasTexture(canvas);
   texture.colorSpace = GFX.SRGBColorSpace;
-  texture.anisotropy = 8;
+  // Trilinear mipmaps handle minification; keep anisotropy at 1 to avoid
+  // accentuating oblique high-frequency detail as the camera moves.
+  texture.anisotropy = 1;
   return texture;
 }
 
@@ -304,12 +289,13 @@ function fringeGeometry(GFX, width, depth, surfaceY, fringeLength) {
   const positions = [];
   const indices = [];
   const rand = random(91827);
-  const count = Math.max(120, Math.round(width * 64));
+  // Keep fringe strands wide enough to survive rasterization at shelf distance.
+  const count = Math.max(72, Math.round(width * 24));
 
   for (const end of [-1, 1]) {
     for (let i = 0; i < count; i++) {
       const x = -width / 2 + 0.018 + (width - 0.036) * ((i + 0.5) / count);
-      const yarnWidth = 0.0012 + rand() * 0.0015;
+      const yarnWidth = 0.0045 + rand() * 0.0015;
       const length = fringeLength * (0.72 + rand() * 0.55);
       const phase = rand() * Math.PI * 2;
       const base = positions.length / 3;
@@ -318,7 +304,7 @@ function fringeGeometry(GFX, width, depth, surfaceY, fringeLength) {
         const t = segment / 3;
         const centerX = x + Math.sin(phase + t * Math.PI * 2) * 0.0018;
         const centerZ = end * (depth / 2 - 0.002 + length * t);
-        const y = surfaceY + 0.0004 + Math.sin(phase + t * Math.PI) * 0.0005;
+        const y = surfaceY + 0.001;
         positions.push(centerX - yarnWidth / 2, y, centerZ);
         positions.push(centerX + yarnWidth / 2, y, centerZ);
       }
@@ -375,9 +361,9 @@ export function createPersianRug(GFX, options = {}) {
   const base = new GFX.Mesh(new GFX.BoxGeometry(o.width, o.thickness, o.depth), foundation);
   base.name = 'rug foundation';
   base.position.y = o.thickness / 2;
-  base.castShadow = true;
-  // Only the exposed pile receives shadows; the hidden foundation top must not
-  // compete as a second shadow receiver a millimetre beneath it.
+  // A floor-hugging rug should not write thin, unstable contact shadows.
+  // Its edge and pile provide the visual grounding without a shadow-map pass.
+  base.castShadow = false;
   base.receiveShadow = false;
   group.add(base);
 
@@ -385,17 +371,18 @@ export function createPersianRug(GFX, options = {}) {
   surface.name = 'woven Persian pile';
   surface.rotation.x = -Math.PI / 2;
   surface.position.y = o.thickness + 0.001;
-  surface.receiveShadow = true;
+  surface.receiveShadow = false;
   group.add(surface);
 
-  const cordY = o.thickness + 0.002;
-  const cordHeight = 0.004;
+  // Lift the selvedge clear of the pile plane; near-coplanar trim can flicker.
+  const cordY = o.thickness + 0.004;
+  const cordHeight = 0.003;
   const longCord = new GFX.BoxGeometry(o.width - 0.025, cordHeight, 0.008);
   for (const z of [-1, 1]) {
     const cord = new GFX.Mesh(longCord, binding);
     cord.name = z < 0 ? 'rear gold selvedge' : 'front gold selvedge';
     cord.position.set(0, cordY, z * (o.depth / 2 - 0.006));
-    cord.castShadow = true;
+    cord.castShadow = false;
     group.add(cord);
   }
   const shortCord = new GFX.BoxGeometry(0.008, cordHeight, o.depth - 0.025);
@@ -403,7 +390,7 @@ export function createPersianRug(GFX, options = {}) {
     const cord = new GFX.Mesh(shortCord, binding);
     cord.name = x < 0 ? 'left gold selvedge' : 'right gold selvedge';
     cord.position.set(x * (o.width / 2 - 0.006), cordY, 0);
-    cord.castShadow = true;
+    cord.castShadow = false;
     group.add(cord);
   }
 
@@ -412,7 +399,7 @@ export function createPersianRug(GFX, options = {}) {
     fringe,
   );
   fringeMesh.name = 'hand-knotted ivory fringe';
-  fringeMesh.castShadow = true;
+  fringeMesh.castShadow = false;
   group.add(fringeMesh);
 
   group.userData.dimensions = {
