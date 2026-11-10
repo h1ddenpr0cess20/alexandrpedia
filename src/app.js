@@ -483,17 +483,46 @@ if (missingSnapshots.length) {
 
 // ———————————————————————————————————————————— people reading in the corners
 
-const READER_SHIRTS = ['#5b6b7a', '#7a4e3a', '#3f5e4c', '#8a6d3b'];
+const READER_SHIRTS = ['#5b6b7a', '#7a4e3a', '#3f5e4c', '#8a6d3b', '#a04b3f', '#d8cbb5', '#2e3a4a'];
+const SKIN_TONES = ['#f6dccb', '#ecc3a4', '#dba982', '#c68a5e', '#a86b45', '#8a5636', '#5f3b26', '#432a1c'];
+const IRIS_COLOURS = ['#4f7fb8', '#6b8e4e', '#7a5a3a', '#3d3d3d', '#8c9ba5', '#5a4a2a'];
+const HAIR_COLOURS = ['#1f1a17', '#4a3322', '#8a6a3a', '#c9a467', '#2b2b2b', '#9a9a9a', '#b5532f'];
+const FACE_SHAPES = ['oval', 'round', 'square', 'long', 'heart', 'diamond'];
+const NOSE_SHAPES = ['straight', 'aquiline', 'roman', 'button', 'snub', 'broad', 'hooked'];
+const EYE_SHAPES = ['almond', 'round', 'hooded', 'monolid', 'upturned', 'downturned'];
+const BUILDS = ['average', 'slim', 'athletic', 'stocky', 'heavy'];
 const choose = (list) => list[Math.floor(Math.random() * list.length)];
+
+/**
+ * A reader with a random sex, build, skin tone and features. The library has no sunglasses.
+ * Returns the figure and its sex.
+ */
+function randomReader() {
+  const sex = choose(['male', 'female']);
+  const man = createHuman(GFX, { sex });
+  const look = {
+    glasses: 'none',
+    build: choose(BUILDS),
+    skin: choose(SKIN_TONES),
+    iris: choose(IRIS_COLOURS),
+    hairColour: choose(HAIR_COLOURS),
+    hair: choose(sex === 'male' ? ['none', 'sidePart'] : ['none', 'sidePart', 'long']),
+    face: choose(FACE_SHAPES),
+    noseShape: choose(NOSE_SHAPES),
+    eyeShape: choose(EYE_SHAPES),
+  };
+  if (sex === 'male') look.beard = choose(['none', 'full']);
+  man.customize(look);
+  man.setShirtColor(choose(READER_SHIRTS));
+  return { man, sex };
+}
 
 /**
  * Seats a reader on a corner chair with a copy of a shelf book open in both hands. The figure is lowered
  * until the soles meet the floor, as they do standing; the chair's seat is sized to the figure (room-layout.js).
  */
-function seatReader(sex, spot, record) {
-  const man = createHuman(GFX, { sex });
-  if (sex === 'male') man.customize({ hair: choose(['sidePart', 'none']) });
-  man.setShirtColor(choose(READER_SHIRTS));
+function seatReader(spot, record) {
+  const { man, sex } = randomReader();
 
   const joint = FIGURES[sex].joints.ball;
   man.pose({ clip: 'idle', t: 0, time: 0 });
@@ -512,15 +541,14 @@ function seatReader(sex, spot, record) {
   scene.add(man.group);
 }
 
-// Two readers, a man and a woman, each in a random corner on a random chair, with a title picked at random.
+// Two readers, each in a random corner on a random chair, with a title picked at random.
 {
   const titles = [...books.values()];
   if (titles.length) {
     const corners = [...CORNER_NOOKS].sort(() => Math.random() - 0.5).slice(0, 2);
-    for (const [index, sex] of ['male', 'female'].entries()) {
-      const corner = corners[index];
+    for (const corner of corners) {
       const nook = cornerReadingNookPlacement({ roomHalf: ROOM_HALF, cornerX: corner.cornerX, cornerZ: corner.cornerZ });
-      seatReader(sex, choose(nook.chairs), choose(titles));
+      seatReader(choose(nook.chairs), choose(titles));
     }
   }
 }
