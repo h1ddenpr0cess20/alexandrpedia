@@ -124,20 +124,19 @@ for (const spec of walls) {
 }
 
 // Earth-toned woven rugs distinguish the central AI room and each subject's paired reading nooks.
-const centerRug = createPersianRug(GFX, { width: 4.7, depth: 3.5, fringeLength: 0.06 });
+const centerRug = createPersianRug(GFX, { width: 4.8, depth: 4.8, fringeLength: 0.06 });
 centerRug.group.name = 'central AI Persian rug';
 centerRug.group.position.set(0, 0.008, 0);
 scene.add(centerRug.group);
 
 for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
-  for (const sourceId of SOURCES_IN_ORDER) {
-    const side = sourceId === 'wikipedia' ? 1 : -1;
-    const rug = createPersianRug(GFX, { width: 2.1, depth: 2.2, fringeLength: 0.04 });
-    rug.group.name = `${sectionId} ${sourceId} reading rug`;
-    rug.group.position.copy(pointInBay(bay, -1.65, side * 1.85, 0.01));
-    rug.group.rotation.y = bay.turn;
-    scene.add(rug.group);
-  }
+  // The outer reading bays each get a matching rug. The central AI rug remains separate,
+  // with a clear band of floor between the two so their fringes never overlap.
+  const rug = createPersianRug(GFX, { width: 2.1, depth: 2.2, fringeLength: 0.04 });
+  rug.group.name = `${sectionId} reading rug`;
+  rug.group.position.copy(pointInBay(bay, -1.65, -1.85, 0.01));
+  rug.group.rotation.y = bay.turn;
+  scene.add(rug.group);
 }
 
 /** Place furniture with its local front aimed at the relevant shelf. */
@@ -189,15 +188,15 @@ for (const sourceId of SOURCES_IN_ORDER) {
   const wood = { species: SPECIES.ai, finish: 'lacquered' };
   furnish(
     createWoodTable(GFX, { ...wood, kind: 'desk', width: 1.3, depth: 0.68, height: DESK_HEIGHT }),
-    0, sign * 1.35, sign > 0 ? 0 : Math.PI,
+    0, sign * 1.2, sign > 0 ? 0 : Math.PI,
   );
   furnish(
     createWoodChair(GFX, { ...wood, kind: 'armchair' }),
-    0, sign * 2.35, sign > 0 ? Math.PI : 0,
+    0, sign * 2.1, sign > 0 ? Math.PI : 0,
   );
   furnish(
     createWoodTable(GFX, { ...wood, kind: 'side' }),
-    sign * 0.95, sign * 1.55, 0,
+    sign * 0.95, sign * 1.4, 0,
   );
 }
 
@@ -303,8 +302,12 @@ for (const [sectionId, catalog] of Object.entries(SECTION_CATALOGS)) {
   }
 }
 
+const snapshotNotice = missingSnapshots.length
+  ? `${missingSnapshots.length} subject articles still need local snapshots. The central AI collection is available now.`
+  : '';
 if (missingSnapshots.length) {
   console.warn(`${missingSnapshots.length} encyclopedia snapshots are not yet imported for the new subject collections.`);
+  say(snapshotNotice);
 }
 
 
@@ -343,6 +346,7 @@ function putBack(record) {
   if (reading === record) reading = null;
   stage.view.zoomBy(VIEW_HOME_ZOOM / stage.view.aim.zoom);
   focusOn(SHELF_TARGET);
+  say(snapshotNotice);
 }
 
 function select(key) {
@@ -488,7 +492,7 @@ canvas.addEventListener('pointerup', (e) => {
     return;
   }
   // The room: the book goes back to its shelf.
-  if (reading) { putBack(reading); say(missingSnapshots.length ? `${missingSnapshots.length} subject articles still need local snapshots. The AI collection is available now.` : ''); }
+  if (reading) putBack(reading);
 });
 
 canvas.addEventListener('dblclick', (e) => { if (!pick(e)) resetView(); });
@@ -498,7 +502,7 @@ globalThis.addEventListener('keydown', (e) => {
   if (!reading) return;
   if (e.key === 'ArrowRight') { reading.book.next(); e.preventDefault(); }
   else if (e.key === 'ArrowLeft') { reading.book.prev(); e.preventDefault(); }
-  else if (e.key === 'Escape') { putBack(reading); say(''); }
+  else if (e.key === 'Escape') { putBack(reading); }
 });
 
 // ———————————————————————————————————————————— the frame loop
