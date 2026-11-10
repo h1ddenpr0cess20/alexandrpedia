@@ -179,7 +179,7 @@ function addBackToBackCases(sectionId, bay, width) {
 
 addBackToBackCases('ai', AI_BAY, 2.35);
 for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
-  addBackToBackCases(sectionId, bay, 1.7);
+  addBackToBackCases(sectionId, bay, sectionId === 'entertainment' ? 2.2 : 1.7);
 }
 
 /** A framed two-sided brass title plaque, painted once and shown legibly from either side. */
@@ -291,17 +291,17 @@ for (const [sectionId, catalog] of Object.entries(SECTION_CATALOGS)) {
   const bay = sectionId === 'ai' ? AI_BAY : WALL_BAYS[sectionId];
   for (const sourceId of bay.sources) {
     const source = SOURCES.find((item) => item.id === sourceId);
-    const available = [];
-    for (const entry of catalog) {
+    const results = await Promise.all(catalog.map(async (entry) => {
       try {
         const article = await loadArticle(sourceId, entry);
-        available.push({ entry, article });
+        return { entry, article };
       } catch (error) {
         missingSnapshots.push(`${sourceId}/${entry.title}`);
         console.warn(`Missing local article snapshot: ${sourceId}/${entry.title} (${error.message})`);
+        return null;
       }
-    }
-
+    }));
+    const available = results.filter(Boolean);
     const stock = stockBooks(available.length, sectionId.length + (sourceId === 'wikipedia' ? 11 : 17));
     const prepared = await Promise.all(available.map(async ({ entry, article }, index) => {
       const pages = flowPages(article.text, { print: source.print });
