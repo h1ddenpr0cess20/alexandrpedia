@@ -545,7 +545,7 @@ const figures = [];
 if (titles.length) {
   await loadingStep('Seating the readers…');
   for (const sex of ['male', 'male', 'female', 'female']) {
-    const man = createHuman(GFX, { sex, detail: 0.8 });
+    const man = createHuman(GFX, { sex, detail: 0.5 });
     const joint = FIGURES[sex].joints.ball;
     man.pose({ clip: 'idle', t: 0, time: 0 });
     const standingSole = man.point('footL', joint)[1];
