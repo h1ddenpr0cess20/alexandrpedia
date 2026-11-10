@@ -10,6 +10,12 @@ const PALETTE = Object.freeze({
   ivory: '#cbbda1', gold: '#a58b60', teal: '#73745b',
   coral: '#98715a', dark: '#43392f',
 });
+const RELIEF = Object.freeze({
+  field: '#818181', fieldLight: '#8b8b8b', navy: '#686868',
+  ivory: '#b7b7b7', gold: '#a2a2a2', teal: '#777777',
+  coral: '#929292', dark: '#626262',
+});
+
 export const RUG_DEFAULTS = Object.freeze({
   width: 3.8, depth: 3.15, thickness: 0.018, fringeLength: 0.075,
 });
@@ -250,37 +256,42 @@ function paintDesign(ctx, width, height, palette) {
   }
 }
 
-function paintCanvas() {
+function weave(ctx, width, height, relief = false) {
+  const rand = random(1837);
+  ctx.save();
+  ctx.globalAlpha = relief ? 0.24 : 0.16;
+  for (let y = 0; y < height; y += 3) {
+    ctx.fillStyle = y % 6 === 0 ? (relief ? '#b5b5b5' : '#f3dfbd') : (relief ? '#555555' : '#27131d');
+    ctx.fillRect(0, y, width, 0.65);
+  }
+  for (let i = 0; i < 26000; i++) {
+    const x = rand() * width, y = rand() * height;
+    ctx.fillStyle = rand() < 0.5
+      ? (relief ? '#c2c2c2' : '#f1d9ad')
+      : (relief ? '#4d4d4d' : '#2d1723');
+    ctx.fillRect(x, y, 1 + rand() * 2.2, 0.7);
+  }
+  ctx.restore();
+}
+
+function paintCanvas({ relief = false } = {}) {
   if (typeof document === 'undefined') return null;
-
-  // Draw the detailed motif at working resolution, then reduce it to the
-  // actual screen-space detail budget. Mipmaps handle further minification;
-  // no pixel-scale yarn/noise is baked into the final surface.
-  const source = document.createElement('canvas');
-  source.width = 1200;
-  source.height = 1000;
-  const sourceContext = source.getContext('2d');
-  if (!sourceContext) return null;
-  paintDesign(sourceContext, source.width, source.height, PALETTE);
-
+  const width = 1200, height = 1000;
   const canvas = document.createElement('canvas');
-  canvas.width = 768;
-  canvas.height = 640;
-  const context = canvas.getContext('2d');
-  if (!context) return null;
-  context.imageSmoothingEnabled = true;
-  context.imageSmoothingQuality = 'high';
-  context.drawImage(source, 0, 0, source.width, source.height, 0, 0, canvas.width, canvas.height);
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  paintDesign(ctx, width, height, relief ? RELIEF : PALETTE);
+  weave(ctx, width, height, relief);
   return canvas;
 }
 
-function textureOf(GFX, canvas) {
+function textureOf(GFX, canvas, { relief = false } = {}) {
   if (!canvas) return null;
   const texture = new GFX.CanvasTexture(canvas);
-  texture.colorSpace = GFX.SRGBColorSpace;
-  // Trilinear mipmaps handle minification; keep anisotropy at 1 to avoid
-  // accentuating oblique high-frequency detail as the camera moves.
-  texture.anisotropy = 1;
+  if (!relief) texture.colorSpace = GFX.SRGBColorSpace;
+  texture.anisotropy = 8;
   return texture;
 }
 
@@ -289,13 +300,12 @@ function fringeGeometry(GFX, width, depth, surfaceY, fringeLength) {
   const positions = [];
   const indices = [];
   const rand = random(91827);
-  // Keep fringe strands wide enough to survive rasterization at shelf distance.
-  const count = Math.max(72, Math.round(width * 24));
+  const count = Math.max(120, Math.round(width * 64));
 
   for (const end of [-1, 1]) {
     for (let i = 0; i < count; i++) {
       const x = -width / 2 + 0.018 + (width - 0.036) * ((i + 0.5) / count);
-      const yarnWidth = 0.0045 + rand() * 0.0015;
+      const yarnWidth = 0.0012 + rand() * 0.0015;
       const length = fringeLength * (0.72 + rand() * 0.55);
       const phase = rand() * Math.PI * 2;
       const base = positions.length / 3;
@@ -304,7 +314,7 @@ function fringeGeometry(GFX, width, depth, surfaceY, fringeLength) {
         const t = segment / 3;
         const centerX = x + Math.sin(phase + t * Math.PI * 2) * 0.0018;
         const centerZ = end * (depth / 2 - 0.002 + length * t);
-        const y = surfaceY + 0.001;
+        const y = surfaceY + 0.0004 + Math.sin(phase + t * Math.PI) * 0.0005;
         positions.push(centerX - yarnWidth / 2, y, centerZ);
         positions.push(centerX + yarnWidth / 2, y, centerZ);
       }
@@ -348,11 +358,10 @@ export function createPersianRug(GFX, options = {}) {
   const group = new GFX.Group();
   group.name = 'ornate Persian rug';
   const colorMap = textureOf(GFX, paintCanvas());
+  const bumpMap = textureOf(GFX, paintCanvas({ relief: true }), { relief: true });
   const pile = new GFX.MeshStandardMaterial({
-    color: '#ffffff', map: colorMap,
-    // The woven detail is baked into the colour map; a micro-bump map caused
-    // temporal aliasing at the library camera's viewing distance.
-    bumpMap: null, roughness: 1, metalness: 0,
+    color: '#ffffff', map: colorMap, bumpMap, bumpScale: 0.0018,
+    roughness: 0.98, metalness: 0,
   });
   const binding = new GFX.MeshStandardMaterial({ color: '#927b55', roughness: 0.9, metalness: 0 });
   const foundation = new GFX.MeshStandardMaterial({ color: '#514638', roughness: 1, metalness: 0 });
@@ -361,28 +370,24 @@ export function createPersianRug(GFX, options = {}) {
   const base = new GFX.Mesh(new GFX.BoxGeometry(o.width, o.thickness, o.depth), foundation);
   base.name = 'rug foundation';
   base.position.y = o.thickness / 2;
-  // A floor-hugging rug should not write thin, unstable contact shadows.
-  // Its edge and pile provide the visual grounding without a shadow-map pass.
-  base.castShadow = false;
-  base.receiveShadow = false;
+  base.castShadow = base.receiveShadow = true;
   group.add(base);
 
   const surface = new GFX.Mesh(new GFX.PlaneGeometry(o.width - 0.02, o.depth - 0.02), pile);
   surface.name = 'woven Persian pile';
   surface.rotation.x = -Math.PI / 2;
   surface.position.y = o.thickness + 0.001;
-  surface.receiveShadow = false;
+  surface.receiveShadow = true;
   group.add(surface);
 
-  // Lift the selvedge clear of the pile plane; near-coplanar trim can flicker.
-  const cordY = o.thickness + 0.004;
-  const cordHeight = 0.003;
+  const cordY = o.thickness + 0.002;
+  const cordHeight = 0.004;
   const longCord = new GFX.BoxGeometry(o.width - 0.025, cordHeight, 0.008);
   for (const z of [-1, 1]) {
     const cord = new GFX.Mesh(longCord, binding);
     cord.name = z < 0 ? 'rear gold selvedge' : 'front gold selvedge';
     cord.position.set(0, cordY, z * (o.depth / 2 - 0.006));
-    cord.castShadow = false;
+    cord.castShadow = true;
     group.add(cord);
   }
   const shortCord = new GFX.BoxGeometry(0.008, cordHeight, o.depth - 0.025);
@@ -390,7 +395,7 @@ export function createPersianRug(GFX, options = {}) {
     const cord = new GFX.Mesh(shortCord, binding);
     cord.name = x < 0 ? 'left gold selvedge' : 'right gold selvedge';
     cord.position.set(x * (o.width / 2 - 0.006), cordY, 0);
-    cord.castShadow = false;
+    cord.castShadow = true;
     group.add(cord);
   }
 
@@ -399,7 +404,7 @@ export function createPersianRug(GFX, options = {}) {
     fringe,
   );
   fringeMesh.name = 'hand-knotted ivory fringe';
-  fringeMesh.castShadow = false;
+  fringeMesh.castShadow = true;
   group.add(fringeMesh);
 
   group.userData.dimensions = {

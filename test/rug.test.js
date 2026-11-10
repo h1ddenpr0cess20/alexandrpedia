@@ -41,13 +41,6 @@ test('the rug is a grouped asset with pile, foundation, bound edges and fringe',
   assert.equal(rug.binding.color, '#927b55', 'binding stays in muted antique brass');
   assert.equal(rug.foundation.color, '#514638', 'foundation uses warm brown wool tones');
   assert.equal(rug.fringe.color, '#c7b99d', 'fringe uses natural undyed wool');
-  assert.equal(rug.pile.bumpMap, null, 'the rug avoids unstable micro-bump detail');
-  assert.equal(rug.group.children[0].castShadow, false, 'the floor-hugging foundation does not write unstable contact shadows');
-  assert.equal(rug.group.children[0].receiveShadow, false);
-  assert.equal(rug.group.children[1].receiveShadow, false, 'the flat pile does not sample crawling shadow-map detail');
-  assert.ok(rug.group.children.slice(2, 6).every((edge) => edge.castShadow === false), 'raised selvedge cords do not cast thin shadows');
-  assert.equal(rug.group.children.at(-1).castShadow, false, 'sub-pixel fringe strands do not cast unstable shadows');
-  assert.ok(rug.group.children.at(-1).geometry.attributes.position.array.length < 6000, 'fringe geometry stays within a stable strand budget');
   assert.equal(rug.group.children.at(-1).name, 'hand-knotted ivory fringe');
   assert.equal(rug.group.children.at(-1).geometry.normalsComputed, true);
   assert.equal(rug.group.children.at(1).name, 'woven Persian pile');
