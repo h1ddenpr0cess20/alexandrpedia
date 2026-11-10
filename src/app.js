@@ -22,7 +22,7 @@ import { SOURCES } from './sources.js';
 import { loadArticle, MAX_PAGES, pageCountForBook } from './library.js';
 import { flowPages } from '../vendor/madness-engine/src/props/book-art.js';
 import { shelveBooksByPriority } from './shelving.js';
-import { catalogsForSections } from './sections.js';
+import { catalogsForSections, SECTION_NAMES } from './sections.js';
 
 // Wikipedia and Grokipedia retain their oak and mahogany identities. Subject nooks have
 // complementary woods, while the AI centerpiece uses walnut as a neutral focal point.
@@ -180,6 +180,54 @@ function addBackToBackCases(sectionId, bay, width) {
 addBackToBackCases('ai', AI_BAY, 2.35);
 for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
   addBackToBackCases(sectionId, bay, 1.7);
+}
+
+/** A framed two-sided brass title plaque, painted once and shown legibly from either side. */
+function addSectionSign(sectionId, bay, width, y = 2.72) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 256;
+  const context = canvas.getContext('2d');
+  if (!context) return;
+  context.fillStyle = '#32251f';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.strokeStyle = '#c4a66a';
+  context.lineWidth = 12;
+  context.strokeRect(20, 20, canvas.width - 40, canvas.height - 40);
+  context.lineWidth = 3;
+  context.strokeRect(38, 38, canvas.width - 76, canvas.height - 76);
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillStyle = '#c4a66a';
+  context.font = 'bold 30px Georgia, serif';
+  context.fillText('ALEXANDRPEDIA COLLECTION', canvas.width / 2, 76);
+  context.fillStyle = '#f1e6d1';
+  context.font = 'bold 72px Georgia, serif';
+  context.fillText(SECTION_NAMES[sectionId].toUpperCase(), canvas.width / 2, 162, canvas.width - 100);
+
+  const texture = new GFX.CanvasTexture(canvas);
+  texture.colorSpace = GFX.SRGBColorSpace;
+  texture.anisotropy = 8;
+  const face = new GFX.MeshStandardMaterial({ map: texture, roughness: 0.82, metalness: 0 });
+  const woodColor = { ai: '#5b3d2b', history: '#6b3c2c', science: '#9a7445', entertainment: '#67452e', philosophy: '#554034' }[sectionId];
+  const frame = new GFX.MeshStandardMaterial({ color: woodColor, roughness: 0.72, metalness: 0 });
+  const group = new GFX.Group();
+  group.name = `${SECTION_NAMES[sectionId]} title plaque`;
+  group.position.set(bay.x, y, bay.z);
+  group.rotation.y = bay.turn;
+  group.add(new GFX.Mesh(new GFX.BoxGeometry(width + 0.14, 0.58, 0.08), frame));
+  const front = new GFX.Mesh(new GFX.PlaneGeometry(width, 0.44), face);
+  front.position.z = 0.043;
+  const reverse = new GFX.Mesh(new GFX.PlaneGeometry(width, 0.44), face);
+  reverse.position.z = -0.043;
+  reverse.rotation.y = Math.PI;
+  group.add(front, reverse);
+  scene.add(group);
+}
+
+addSectionSign('ai', AI_BAY, 2.05, 2.82);
+for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
+  addSectionSign(sectionId, bay, 1.45, 2.55);
 }
 
 // AI reading desks sit on opposite sides of the central island.
