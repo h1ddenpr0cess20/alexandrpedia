@@ -430,7 +430,7 @@ function pick(e) {
   return null;
 }
 
-const AXIS_Y = new GFX.Vector3(0, 1, 0);
+
 const AXIS_X = new GFX.Vector3(1, 0, 0);
 const SPIN = new GFX.Quaternion();
 const RIGHT = new GFX.Vector3();
