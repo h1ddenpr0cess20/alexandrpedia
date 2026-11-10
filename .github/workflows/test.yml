@@ -1,0 +1,31 @@
+name: Test Alexandrpedia
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - feature/four-wall-library-layout
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check JavaScript syntax
+        run: |
+          node --check src/app.js
+          node --check src/sections.js
+          node --check scripts/check-titles.mjs
+          node --check scripts/snapshot-wikipedia.mjs
+          node --check scripts/snapshot-grokipedia.mjs
+      - name: Run tests
+        run: npm test
