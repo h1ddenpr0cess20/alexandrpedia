@@ -20,6 +20,7 @@ import { CATALOG, KINDS, keyOf } from './catalog.js';
 import { SOURCES } from './sources.js';
 import { loadOrFallback, MAX_PAGES, pageCountForBook } from './library.js';
 import { flowPages } from '../vendor/madness-engine/src/props/book-art.js';
+import { shelveBooksByPriority } from './shelving.js';
 
 // Not walnut: the engine paints walnut from a photograph, on canvases WebGPU refuses to copy before the photo has decoded.
 const SPECIES = { wikipedia: 'oak', grokipedia: 'mahogany' };
@@ -180,7 +181,7 @@ for (const source of SOURCES) {
     return book;
   }));
 
-  const { left } = cases[source.id].shelve(prepared, { spread: true });
+  const { left } = shelveBooksByPriority(cases[source.id], prepared);
   if (left.length) console.warn(`${source.name}: ${left.length} book(s) did not fit on the shelves`);
   for (const book of prepared) {
     const record = byGroup.get(book.group);
