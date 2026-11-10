@@ -84,7 +84,7 @@ const VIEW_HOME_YAW = Math.PI / 4;
 const VIEW_HOME_ZOOM = 2.0;
 // The book is at shelf scale (0.57) on the table, so the camera stands closer than it did for a full-size book.
 const BOOK_VIEW_ZOOM = 0.4;
-const { createView } = defineView({
+const { createView, groundAxes } = defineView({
   home: { yaw: VIEW_HOME_YAW, pitch: 0.48, zoom: VIEW_HOME_ZOOM },
   limits: { pitch: [0.08, 1.35], zoom: [0.35, 2.4] },
 });
@@ -841,13 +841,31 @@ canvas.addEventListener('pointerup', (e) => {
 
 canvas.addEventListener('dblclick', (e) => { if (!pick(e)) resetView(); });
 
+// Keyboard: W/A/S/D or the arrow keys slide the view across the room. While a book is open the arrows turn its pages instead.
+const heldKeys = new Set();
+const MOVE = { w: [0, 1], s: [0, -1], a: [-1, 0], d: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+const keyName = (e) => (e.key.length === 1 ? e.key.toLowerCase() : e.key);
+/** How far the keys ask to go, right and up on the screen: [right, up], each -1 to 1. */
+function keyMove() {
+  let right = 0, up = 0;
+  for (const key of heldKeys) {
+    if (reading && key.startsWith('Arrow')) continue;
+    right += MOVE[key][0];
+    up += MOVE[key][1];
+  }
+  return [right, up];
+}
 globalThis.addEventListener('keydown', (e) => {
+  const key = keyName(e);
+  if (MOVE[key] && !(reading && key.startsWith('Arrow'))) heldKeys.add(key);
   if (e.key === 'r' || e.key === 'R' || e.key === 'Home') { resetView(); return; }
   if (!reading) return;
   if (e.key === 'ArrowRight') { reading.book.next(); e.preventDefault(); }
   else if (e.key === 'ArrowLeft') { reading.book.prev(); e.preventDefault(); }
   else if (e.key === 'Escape') { putBack(reading); }
 });
+globalThis.addEventListener('keyup', (e) => heldKeys.delete(keyName(e)));
+globalThis.addEventListener('blur', () => heldKeys.clear());
 
 // ———————————————————————————————————————————— the frame loop
 
@@ -883,6 +901,16 @@ renderer.setAnimationLoop((now) => {
     if (record !== reading && record.book.openness < 0.001) moving.delete(record);
   }
   // The camera's aim glides to where it should look; the view eases its own turn and zoom.
+  // Held movement keys slide the view across the room, relative to the screen, at a pace that grows with the zoom.
+  const [right, up] = keyMove();
+  if (right || up) {
+    const axes = groundAxes(stage.view.yaw);
+    const step = 2.0 * stage.view.zoom * dt;
+    panned.x += (axes.right[0] * right + axes.up[0] * up) * step;
+    panned.z += (axes.right[1] * right + axes.up[1] * up) * step;
+    panned.clampLength(0, PAN_LIMIT);
+    dirty = true;
+  }
   GOAL.copy(focus).add(panned);
   const view = stage.view;
   const eased = Math.abs(view.yaw - view.aim.yaw) > 1e-6 || Math.abs(view.pitch - view.aim.pitch) > 1e-6 || Math.abs(view.zoom - view.aim.zoom) > 1e-6;
