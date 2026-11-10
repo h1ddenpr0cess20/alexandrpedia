@@ -185,12 +185,12 @@ for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
 }
 
 /** A framed two-sided brass title plaque, painted once and shown legibly from either side. */
-function addSectionSign(sectionId, bay, width, y = 2.72) {
+function createSectionSignFace(sectionId, collectionLabel, width) {
   const canvas = document.createElement('canvas');
   canvas.width = 1024;
   canvas.height = 256;
   const context = canvas.getContext('2d');
-  if (!context) return;
+  if (!context) return null;
   context.fillStyle = '#32251f';
   context.fillRect(0, 0, canvas.width, canvas.height);
   context.strokeStyle = '#c4a66a';
@@ -202,7 +202,7 @@ function addSectionSign(sectionId, bay, width, y = 2.72) {
   context.textBaseline = 'middle';
   context.fillStyle = '#c4a66a';
   context.font = 'bold 30px Georgia, serif';
-  context.fillText('ALEXANDRPEDIA COLLECTION', canvas.width / 2, 76);
+  context.fillText(collectionLabel, canvas.width / 2, 76);
   context.fillStyle = '#f1e6d1';
   context.font = 'bold 72px Georgia, serif';
   context.fillText(SECTION_NAMES[sectionId].toUpperCase(), canvas.width / 2, 162, canvas.width - 100);
@@ -210,20 +210,31 @@ function addSectionSign(sectionId, bay, width, y = 2.72) {
   const texture = new GFX.CanvasTexture(canvas);
   texture.colorSpace = GFX.SRGBColorSpace;
   texture.anisotropy = 8;
-  const face = new GFX.MeshStandardMaterial({ map: texture, roughness: 0.82, metalness: 0 });
+  return new GFX.MeshStandardMaterial({ map: texture, roughness: 0.82, metalness: 0 });
+}
+
+/** A framed two-sided brass plaque, with the source named on the side that faces each aisle. */
+function addSectionSign(sectionId, bay, width, y = 2.72) {
+  const wikipediaFace = createSectionSignFace(sectionId, 'WIKIPEDIA COLLECTION', width);
+  const grokipediaFace = createSectionSignFace(sectionId, 'GROKIPEDIA COLLECTION', width);
   const woodColor = { ai: '#5b3d2b', history: '#6b3c2c', science: '#9a7445', entertainment: '#67452e', philosophy: '#554034' }[sectionId];
   const frame = new GFX.MeshStandardMaterial({ color: woodColor, roughness: 0.72, metalness: 0 });
   const group = new GFX.Group();
-  group.name = `${SECTION_NAMES[sectionId]} title plaque`;
+  group.name = `${SECTION_NAMES[sectionId]} two-sided collection plaque`;
   group.position.set(bay.x, y, bay.z);
   group.rotation.y = bay.turn;
   group.add(new GFX.Mesh(new GFX.BoxGeometry(width + 0.14, 0.58, 0.08), frame));
-  const front = new GFX.Mesh(new GFX.PlaneGeometry(width, 0.44), face);
-  front.position.z = 0.043;
-  const reverse = new GFX.Mesh(new GFX.PlaneGeometry(width, 0.44), face);
-  reverse.position.z = -0.043;
-  reverse.rotation.y = Math.PI;
-  group.add(front, reverse);
+  if (wikipediaFace) {
+    const front = new GFX.Mesh(new GFX.PlaneGeometry(width, 0.44), wikipediaFace);
+    front.position.z = 0.043;
+    group.add(front);
+  }
+  if (grokipediaFace) {
+    const reverse = new GFX.Mesh(new GFX.PlaneGeometry(width, 0.44), grokipediaFace);
+    reverse.position.z = -0.043;
+    reverse.rotation.y = Math.PI;
+    group.add(reverse);
+  }
   scene.add(group);
 }
 
