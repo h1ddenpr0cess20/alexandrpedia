@@ -16,9 +16,12 @@ import { createBookcase, stockBooks } from '../vendor/madness-engine/src/props/b
 import { createBook } from '../vendor/madness-engine/src/props/book.js';
 import { createWoodTable } from '../vendor/madness-engine/src/props/wood-table.js';
 import { createWoodChair } from '../vendor/madness-engine/src/props/wood-chair.js';
+import { createPersianRug } from './rug.js';
 import { CATALOG, KINDS, keyOf } from './catalog.js';
 import { SOURCES } from './sources.js';
-import { loadOrFallback } from './library.js';
+import { loadOrFallback, MAX_PAGES, pageCountForBook } from './library.js';
+import { flowPages } from '../vendor/madness-engine/src/props/book-art.js';
+import { shelveBooksByPriority } from './shelving.js';
 
 // Not walnut: the engine paints walnut from a photograph, on canvases WebGPU refuses to copy before the photo has decoded.
 const SPECIES = { wikipedia: 'oak', grokipedia: 'mahogany' };
@@ -82,14 +85,9 @@ wall.position.set(0, 2.1, -0.28);
 wall.receiveShadow = true;
 scene.add(wall);
 
-const rug = new GFX.Mesh(
-  new GFX.CircleGeometry(2.0, 48),
-  new GFX.MeshStandardMaterial({ color: '#6b2f35', roughness: 1, metalness: 0 }),
-);
-rug.rotation.x = -Math.PI / 2;
-rug.position.set(0, 0.004, 2.2);
-rug.receiveShadow = true;
-scene.add(rug);
+const rug = createPersianRug(GFX, { width: 3.8, depth: 3.15 });
+rug.group.position.set(0, 0, 2.2);
+scene.add(rug.group);
 
 /** Sets a piece of furniture down on the floor, turned about the vertical (0 faces +z, toward the viewer). */
 function furnish(piece, x, z, turn = 0) {
@@ -115,34 +113,75 @@ for (const source of SOURCES) {
 // Two bookcases side by side against the wall, the Wikipedia one on the left.
 const cases = {};
 SOURCES.forEach((source, i) => {
-  const shelf = createBookcase(GFX, { species: SPECIES[source.id], shelves: 5, width: 0.8, depth: 0.34, height: 2.2 });
+  const shelf = createBookcase(GFX, { species: SPECIES[source.id], shelves: 4, width: 0.8, depth: 0.34, height: 2.2 });
   shelf.group.position.set(i === 0 ? -0.45 : 0.45, 0, 0);
   scene.add(shelf.group);
   cases[source.id] = shelf;
 });
 
 /** Every book: { entry, source, book, key, home } where `home` is where it stands on its shelf. */
+await loadingStep('Reading the committed article snapshots…');
+
 const books = new Map();
 const byGroup = new Map();
+
+// Keep the current varied shelf heights, but remove the random overall scale from
+// thickness. The spine is sized by measured article pages, not stockBooks' guess.
+const BOOK_SCALE = 0.57;
+const BOOK_PAGE_WIDTH = 0.30;
+const BOOK_BASE_HEIGHT = 0.42;
+const BOOK_LEAF_PITCH = 0.0006;
+
 for (const source of SOURCES) {
   const stock = stockBooks(CATALOG.length, source.id === 'wikipedia' ? 3 : 4);
-  const made = CATALOG.map((entry, n) => {
+  const prepared = await Promise.all(CATALOG.map(async (entry, index) => {
+    const article = await loadOrFallback(source.id, entry);
+    // Measure using the same type treatment the book uses when it is opened.
+    const print = source.print;
+    const pages = flowPages(article.text, { print });
+    const visiblePages = pages.slice(0, MAX_PAGES);
+    const pageCount = pageCountForBook(visiblePages.length);
+    if (pages.length > MAX_PAGES) {
+      console.warn(`${article.title}: ${pages.length} measured pages exceeds the engine's ${MAX_PAGES}-page limit; remaining text cannot fit in one book.`);
+    }
+
+    const originalSize = stock[index].size;
     const book = createBook(GFX, {
-      ...stock[n],
-      title: entry.title,
+      ...stock[index],
+      title: article.title,
       subtitle: `${source.name} · ${KINDS[entry.kind]}`,
+      pageCount,
+      pages: visiblePages,
+      print,
+      width: BOOK_PAGE_WIDTH,
+      // Preserve the old stock book's physical height range while using one
+      // common scale for all other axes, so spine width is entirely content-driven.
+      height: BOOK_BASE_HEIGHT * (originalSize / BOOK_SCALE),
+      size: BOOK_SCALE,
+      leafPitch: BOOK_LEAF_PITCH,
       deferPages: true,
-      bookplate: false, // no ex libris inside the cover
-      textureSize: 512, // a shelf holds a hundred books; a 2048 cover for each would not fit in memory
+      bookplate: false,
+      textureSize: 512,
+      bump: false,
     });
-    const record = { entry, source, book, key: `${source.id}:${keyOf(entry)}`, home: null };
+
+    const record = {
+      entry,
+      source,
+      article,
+      book,
+      pages: visiblePages.length,
+      key: `${source.id}:${keyOf(entry)}`,
+      home: null,
+    };
     books.set(record.key, record);
     byGroup.set(book.group, record);
     return book;
-  });
-  const { left } = cases[source.id].shelve(made, { spread: true });
-  if (left.length) console.warn(`${source.name}: ${left.length} book(s) did not fit`);
-  for (const book of made) {
+  }));
+
+  const { left } = shelveBooksByPriority(cases[source.id], prepared);
+  if (left.length) console.warn(`${source.name}: ${left.length} book(s) did not fit on the shelves`);
+  for (const book of prepared) {
     const record = byGroup.get(book.group);
     record.home = {
       parent: cases[source.id].group,
@@ -161,7 +200,6 @@ const panned = new GFX.Vector3();
 function focusOn(point) { focus.copy(point); panned.set(0, 0, 0); }
 
 let reading = null;       // the record of the book on the table, if any
-let token = 0;            // which selection is current, so a slow fetch cannot overwrite a newer one
 const moving = new Set(); // books that are opening or closing
 
 function takeDown(record) {
@@ -186,26 +224,19 @@ function putBack(record) {
   book.group.scale.copy(home.scale);
   moving.delete(record);
   if (reading === record) reading = null;
-  token++; // a fetch still on its way for this book must not open it on the shelf
   focusOn(SHELF_TARGET);
 }
 
-async function select(key) {
+function select(key) {
   const record = books.get(key);
   if (!record || reading === record) return;
   if (reading) putBack(reading);
-  const current = ++token;
   takeDown(record);
   record.book.open();
-  say(`Fetching ${record.entry.title} from ${record.source.name}…`);
-
-  const article = await loadOrFallback(record.source.id, record.entry);
-  if (current !== token || reading !== record) return; // another book was chosen, or this one was put back, meanwhile
-  record.book.setStyle({ title: article.title, subtitle: `${record.source.name} · ${KINDS[record.entry.kind]}` });
-  record.book.setText(article.text);
-  record.book.open();
   wake();
-  say(article.fallback ? `Could not fetch this one, so a stand-in book is on the table. (${article.failure})` : '');
+  say(record.article.fallback
+    ? `Could not load the saved article, so a stand-in book is open. (${record.article.failure})`
+    : '');
 }
 
 // ———————————————————————————————————————————— picking things in the scene

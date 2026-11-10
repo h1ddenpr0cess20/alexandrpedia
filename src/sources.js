@@ -1,19 +1,11 @@
 /**
  * The encyclopedias the books come from. Each source turns a title into
  * `{ source, title, url, text, license }`, where `text` is the book's form (see
- * text.js). No proxy is used. Wikipedia's API allows cross-origin requests with
- * `origin=*`, so the browser asks it directly. Grokipedia sends no CORS headers,
- * so a browser cannot read it; its articles are fetched ahead of time from Node
- * (`npm run snapshot-grokipedia`, scripts/snapshot-grokipedia.mjs) into
- * data/grokipedia/, and the browser reads those from our own origin.
+ * text.js). Both encyclopedias are read from committed JSON snapshots under data/.
+ * The browser does not call either encyclopedia API.
  */
 
-import { ArticleNotFound, HttpError, fetchWithRetry } from './fetch.js';
-import { grokipediaBody, htmlToText, wikipediaExtractToText } from './text.js';
-
-/** Browsers do not let a page set its User-Agent, so it is only sent from Node. */
-const NODE = typeof window === 'undefined';
-const headers = NODE ? { 'User-Agent': 'alexandrpedia/0.1 (https://github.com/h1ddenpr0cess20/alexandrpedia)' } : undefined;
+import { ArticleNotFound } from './fetch.js';
 
 /** The title as it appears in a page's address: spaces become underscores. */
 export const slugOf = (title) => String(title).trim().replace(/\s+/g, '_');
@@ -21,67 +13,50 @@ export const slugOf = (title) => String(title).trim().replace(/\s+/g, '_');
 export const WIKIPEDIA = Object.freeze({
   id: 'wikipedia',
   name: 'Wikipedia',
+  print: true,
   license: 'CC BY-SA 4.0',
   pageUrl: (title) => `https://en.wikipedia.org/wiki/${encodeURIComponent(slugOf(title))}`,
-  async fetch(title, options = {}) {
-    const params = new URLSearchParams({
-      action: 'query',
-      prop: 'extracts|info',
-      explaintext: '1',
-      exlimit: '1',
-      redirects: '1',
-      inprop: 'url',
-      format: 'json',
-      formatversion: '2',
-      origin: '*',
-      titles: slugOf(title).replace(/_/g, ' '),
-    });
-    const url = `https://en.wikipedia.org/w/api.php?${params}`;
-    const res = await fetchWithRetry(url, { ...options, init: headers ? { headers } : undefined });
-    if (!res.ok) throw new HttpError(url, res.status);
-    const page = (await res.json())?.query?.pages?.[0];
-    if (!page || page.missing || page.invalid) throw new ArticleNotFound(WIKIPEDIA.name, title);
-    return {
-      source: WIKIPEDIA.id,
-      title: page.title,
-      url: page.fullurl ?? WIKIPEDIA.pageUrl(page.title),
-      text: wikipediaExtractToText(page.extract ?? ''),
-      license: WIKIPEDIA.license,
-    };
-  },
+  async fetch(title) {
+    return readSnapshot(WIKIPEDIA.id, title, WIKIPEDIA.pageUrl(title), WIKIPEDIA.license);
+  }
 });
 
 export const GROKIPEDIA = Object.freeze({
   id: 'grokipedia',
   name: 'Grokipedia',
+  print: false, // Use the engine's Madman's Hand page lettering.
   license: 'See grokipedia.com',
   pageUrl: (title) => `https://grokipedia.com/page/${encodeURIComponent(slugOf(title))}`,
-  async fetch(title, options = {}) {
-    const url = GROKIPEDIA.pageUrl(title);
-    if (!NODE) {
-      // The snapshot, from our own origin.
-      const file = new URL(`data/grokipedia/${encodeURIComponent(slugOf(title))}.json`, globalThis.document?.baseURI ?? globalThis.location?.href);
-      const res = await fetchWithRetry(file.href, options);
-      if (res.status === 404) throw new ArticleNotFound(GROKIPEDIA.name, title);
-      if (!res.ok) throw new HttpError(file.href, res.status);
-      return res.json();
-    }
-    const res = await fetchWithRetry(url, { ...options, init: headers ? { headers } : undefined });
-    if (res.status === 404) throw new ArticleNotFound(GROKIPEDIA.name, title);
-    if (!res.ok) throw new HttpError(url, res.status);
-    const html = await res.text();
-    const body = grokipediaBody(html);
-    if (!body) throw new ArticleNotFound(GROKIPEDIA.name, title);
-    const name = /<title>([^<]*)<\/title>/i.exec(html)?.[1] ?? title;
-    return {
-      source: GROKIPEDIA.id,
-      title: name.replace(/\s*[—-]\s*Grokipedia\s*$/i, '').trim() || title,
-      url,
-      text: htmlToText(body),
-      license: GROKIPEDIA.license,
-    };
-  },
+  async fetch(title) {
+    return readSnapshot(GROKIPEDIA.id, title, GROKIPEDIA.pageUrl(title), GROKIPEDIA.license);
+  }
 });
+
+/**
+ * Read the committed JSON snapshot. Missing or malformed files are explicit errors,
+ * never a trigger for a live encyclopedia request.
+ */
+async function readSnapshot(sourceId, title, url, license) {
+  const base = typeof document !== 'undefined'
+    ? document.baseURI
+    : new URL('../', import.meta.url);
+  const file = new URL(`data/${sourceId}/${encodeURIComponent(slugOf(title))}.json`, base);
+  const response = await fetch(file.href);
+  const sourceName = sourceId === 'wikipedia' ? 'Wikipedia' : 'Grokipedia';
+  if (response.status === 404) throw new ArticleNotFound(sourceName, title);
+  if (!response.ok) throw new Error(`Could not read ${sourceId} snapshot (${response.status}): ${file.pathname}`);
+  const article = await response.json();
+  if (!article || typeof article.text !== 'string' || !article.text.trim()) {
+    throw new Error(`Invalid ${sourceId} snapshot for "${title}"`);
+  }
+  return {
+    source: sourceId,
+    title: article.title || title,
+    url: article.url || url,
+    text: article.text,
+    license: article.license || license,
+  };
+}
 
 /** Every source, in the order their shelves are shown. */
 export const SOURCES = Object.freeze([WIKIPEDIA, GROKIPEDIA]);

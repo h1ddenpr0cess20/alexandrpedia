@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CATALOG, KINDS, keyOf } from '../src/catalog.js';
 import { FALLBACKS, fallbackFor } from '../src/fallbacks.js';
-import { MAX_PAGES, MIN_PAGES, blocksOf, clearCache, loadArticle, loadOrFallback, pageCountFor } from '../src/library.js';
-import { GROKIPEDIA, SOURCES } from '../src/sources.js';
+import { BOOK_END_PAGES, MAX_PAGES, MIN_PAGES, blocksOf, clearCache, loadArticle, loadOrFallback, pageCountFor, pageCountForBook } from '../src/library.js';
+import { GROKIPEDIA, WIKIPEDIA, SOURCES } from '../src/sources.js';
 
 test('the catalog has topics, people and companies, with no repeated titles or keys', () => {
   const titles = CATALOG.map((e) => e.title.toLowerCase());
@@ -16,12 +16,29 @@ test('the catalog has topics, people and companies, with no repeated titles or k
 test('both sources sit on the same shelves, in the same order', () => {
   assert.deepEqual(SOURCES.map((s) => s.id), ['wikipedia', 'grokipedia']);
   assert.equal(SOURCES.length, 2);
+  assert.equal(WIKIPEDIA.print, true, 'Wikipedia keeps its standard printed pages');
+  assert.equal(GROKIPEDIA.print, false, 'Grokipedia uses the engine\'s Madman\'s Hand pages');
 });
 
-test('pages are even, and kept within the book\'s limits', () => {
+test('page metadata follows content length without arbitrary extra pages', () => {
   assert.equal(pageCountFor(''), MIN_PAGES);
-  assert.equal(pageCountFor('x'.repeat(5000)) % 2, 0);
+  const short = pageCountFor('Brief article.');
+  const medium = pageCountFor('word '.repeat(2000));
+  const long = pageCountFor('word '.repeat(12000));
+  assert.ok(medium > short);
+  assert.ok(long > medium);
+  assert.equal(medium % 2, 0);
   assert.equal(pageCountFor('x'.repeat(10_000_000)), MAX_PAGES);
+});
+
+test('each book reserves four blank pages after its measured article', () => {
+  assert.equal(BOOK_END_PAGES, 4);
+  assert.equal(pageCountForBook(0), 6);
+  assert.equal(pageCountForBook(1), 6);
+  assert.equal(pageCountForBook(8), 12);
+  assert.equal(pageCountForBook(314), 318);
+  assert.equal(pageCountForBook(317), MAX_PAGES);
+  assert.equal(pageCountForBook(319), MAX_PAGES);
 });
 
 test('a text becomes blocks: headings and paragraphs', () => {
@@ -92,4 +109,35 @@ test('catalog entries, which have no key of their own, are cached apart', async 
   assert.equal(a.title, CATALOG[0].title);
   assert.equal(b.title, CATALOG[1].title);
   assert.notEqual(a.key, b.key);
+});
+
+test('both encyclopedia sources read committed local snapshots, never live APIs', async () => {
+  const originalFetch = globalThis.fetch;
+  const requested = [];
+  globalThis.fetch = async (input) => {
+    requested.push(new URL(input));
+    return {
+      status: 200,
+      ok: true,
+      json: async () => ({
+        title: 'Artificial intelligence',
+        url: 'https://example.test/article',
+        text: 'Snapshot article text.',
+        license: 'snapshot license',
+      }),
+    };
+  };
+  try {
+    const [wiki, grok] = await Promise.all([
+      WIKIPEDIA.fetch('Artificial intelligence'),
+      GROKIPEDIA.fetch('Artificial intelligence'),
+    ]);
+    const paths = requested.map((url) => url.pathname);
+    assert.ok(paths.some((path) => path.endsWith('/data/wikipedia/Artificial_intelligence.json')));
+    assert.ok(paths.some((path) => path.endsWith('/data/grokipedia/Artificial_intelligence.json')));
+    assert.equal(wiki.text, 'Snapshot article text.');
+    assert.equal(grok.text, 'Snapshot article text.');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
