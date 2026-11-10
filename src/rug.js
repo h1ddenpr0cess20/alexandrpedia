@@ -5,9 +5,10 @@
  */
 
 const PALETTE = Object.freeze({
-  field: '#702437', fieldLight: '#873247', navy: '#17243b',
-  ivory: '#e7d6b2', gold: '#c6a05f', teal: '#3c7772',
-  coral: '#b96558', dark: '#351d2a',
+  // Aged wool: tobacco, warm stone, olive, clay and softened linen.
+  field: '#786b56', fieldLight: '#88775e', navy: '#443d32',
+  ivory: '#cbbda1', gold: '#a58b60', teal: '#73745b',
+  coral: '#98715a', dark: '#43392f',
 });
 export const RUG_DEFAULTS = Object.freeze({
   width: 3.8, depth: 3.15, thickness: 0.018, fringeLength: 0.075,
@@ -367,9 +368,9 @@ export function createPersianRug(GFX, options = {}) {
     // temporal aliasing at the library camera's viewing distance.
     bumpMap: null, roughness: 1, metalness: 0,
   });
-  const binding = new GFX.MeshStandardMaterial({ color: '#b18b50', roughness: 0.82, metalness: 0.02 });
-  const foundation = new GFX.MeshStandardMaterial({ color: '#512132', roughness: 1, metalness: 0 });
-  const fringe = new GFX.MeshStandardMaterial({ color: '#ddcba5', roughness: 1, metalness: 0, side: GFX.DoubleSide });
+  const binding = new GFX.MeshStandardMaterial({ color: '#927b55', roughness: 0.9, metalness: 0 });
+  const foundation = new GFX.MeshStandardMaterial({ color: '#514638', roughness: 1, metalness: 0 });
+  const fringe = new GFX.MeshStandardMaterial({ color: '#c7b99d', roughness: 1, metalness: 0, side: GFX.DoubleSide });
 
   const base = new GFX.Mesh(new GFX.BoxGeometry(o.width, o.thickness, o.depth), foundation);
   base.name = 'rug foundation';
