@@ -58,3 +58,99 @@ export function wallCasePlacement({
     height: ORIGINAL_BOOKCASE_DIMENSIONS.height,
   });
 }
+
+
+export const CENTER_LONG_TABLE_DIMENSIONS = Object.freeze({ width: 2.4, depth: 0.9 });
+export const CORNER_READING_TABLE_DIMENSIONS = Object.freeze({ width: 0.82, depth: 0.64 });
+export const CORNER_TABLE_SETBACK = 1.65;
+export const CORNER_CHAIR_DISTANCE = 0.98;
+
+/** Two long shared tables flank the central AI cases without blocking either front aisle. */
+export function centerLongTablePlacement({ side, offset = 1.75 } = {}) {
+  if (side !== 'left' && side !== 'right') {
+    throw new RangeError("side must be 'left' or 'right'.");
+  }
+  if (!Number.isFinite(offset) || offset < 0.9) {
+    throw new RangeError('offset must leave clearance beside the central bookcases.');
+  }
+  return Object.freeze({
+    side,
+    x: side === 'left' ? -offset : offset,
+    z: 0,
+    rotationY: Math.PI / 2,
+    ...CENTER_LONG_TABLE_DIMENSIONS,
+  });
+}
+
+/** A compact table and chair tucked into one of the four open corners. */
+export function cornerReadingNookPlacement({
+  roomHalf,
+  cornerX,
+  cornerZ,
+  setback = CORNER_TABLE_SETBACK,
+  chairDistance = CORNER_CHAIR_DISTANCE,
+}) {
+  if (!Number.isFinite(roomHalf) || roomHalf <= 0) {
+    throw new RangeError('roomHalf must be a positive number.');
+  }
+  if (![-1, 1].includes(cornerX) || ![-1, 1].includes(cornerZ)) {
+    throw new RangeError('cornerX and cornerZ must each be -1 or 1.');
+  }
+  if (!Number.isFinite(setback) || setback <= 0 || setback >= roomHalf) {
+    throw new RangeError('setback must be positive and smaller than roomHalf.');
+  }
+  if (!Number.isFinite(chairDistance) || chairDistance <= 0) {
+    throw new RangeError('chairDistance must be positive.');
+  }
+
+  const table = {
+    x: cornerX * (roomHalf - setback),
+    z: cornerZ * (roomHalf - setback),
+  };
+  const inward = { x: -cornerX / Math.SQRT2, z: -cornerZ / Math.SQRT2 };
+  const chair = {
+    x: table.x + inward.x * chairDistance,
+    z: table.z + inward.z * chairDistance,
+  };
+
+  return Object.freeze({
+    table: Object.freeze({
+      ...table,
+      rotationY: Math.atan2(inward.x, inward.z),
+    }),
+    chair: Object.freeze({
+      ...chair,
+      rotationY: Math.atan2(-inward.x, -inward.z),
+    }),
+    ...CORNER_READING_TABLE_DIMENSIONS,
+  });
+}
+
+export const WALL_READING_CORNERS = Object.freeze({
+  history: Object.freeze([
+    Object.freeze({ cornerX: -1, cornerZ: -1 }),
+    Object.freeze({ cornerX: 1, cornerZ: -1 }),
+  ]),
+  science: Object.freeze([
+    Object.freeze({ cornerX: 1, cornerZ: -1 }),
+    Object.freeze({ cornerX: 1, cornerZ: 1 }),
+  ]),
+  entertainment: Object.freeze([
+    Object.freeze({ cornerX: 1, cornerZ: 1 }),
+    Object.freeze({ cornerX: -1, cornerZ: 1 }),
+  ]),
+  philosophy: Object.freeze([
+    Object.freeze({ cornerX: -1, cornerZ: 1 }),
+    Object.freeze({ cornerX: -1, cornerZ: -1 }),
+  ]),
+});
+
+/** Resolve a wall/source pair to the nearest shared corner reading nook. */
+export function wallReadingNookPlacement({ roomHalf, sectionId, sourceIndex }) {
+  const corners = WALL_READING_CORNERS[sectionId];
+  if (!corners) throw new RangeError('Unknown wall section: ' + sectionId);
+  if (sourceIndex !== 0 && sourceIndex !== 1) {
+    throw new RangeError('sourceIndex must be 0 (Wikipedia) or 1 (Grokipedia).');
+  }
+  return cornerReadingNookPlacement({ roomHalf, ...corners[sourceIndex] });
+}

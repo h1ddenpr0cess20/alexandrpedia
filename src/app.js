@@ -23,7 +23,7 @@ import { loadArticle, MAX_PAGES, pageCountForBook } from './library.js';
 import { flowPages } from '../vendor/madness-engine/src/props/book-art.js';
 import { shelveBooksByPriority } from './shelving.js';
 import { catalogsForSections, SECTION_NAMES } from './sections.js';
-import { ORIGINAL_BOOKCASE_DIMENSIONS, wallCasePlacement } from './room-layout.js';
+import { CENTER_LONG_TABLE_DIMENSIONS, CORNER_READING_TABLE_DIMENSIONS, ORIGINAL_BOOKCASE_DIMENSIONS, centerLongTablePlacement, cornerReadingNookPlacement, wallCasePlacement, wallReadingNookPlacement } from './room-layout.js';
 
 // Wikipedia and Grokipedia retain their oak and mahogany identities. Subject nooks have
 // complementary woods, while the AI centerpiece uses walnut as a neutral focal point.
@@ -51,13 +51,17 @@ function pointInBay(bay, x, z, y = 0) {
 
 function readAt(record) {
   const sourceIndex = SOURCES_IN_ORDER.indexOf(record.source.id);
-  const towardCenter = sourceIndex === 0 ? 1 : -1;
   if (record.sectionId === 'ai') {
-    return pointInBay(AI_BAY, 0, towardCenter * 2.1, DESK_HEIGHT + 0.42);
+    const side = sourceIndex === 0 ? 'left' : 'right';
+    const placement = centerLongTablePlacement({ side });
+    return pointInBay(AI_BAY, placement.x, placement.z, DESK_HEIGHT + 0.42);
   }
-  const bay = WALL_BAYS[record.sectionId];
-  const localX = sourceIndex === 0 ? -0.43 : 0.43;
-  return pointInBay(bay, localX, -1.55, DESK_HEIGHT + 0.42);
+  const nook = wallReadingNookPlacement({
+    roomHalf: ROOM_HALF,
+    sectionId: record.sectionId,
+    sourceIndex,
+  });
+  return new GFX.Vector3(nook.table.x, DESK_HEIGHT + 0.42, nook.table.z);
 }
 const READ_UPRIGHT = new GFX.Quaternion().setFromAxisAngle(new GFX.Vector3(1, 0, 0), Math.PI / 2);
 
@@ -195,38 +199,80 @@ for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
   addSideBySideWallCases(sectionId, bay);
 }
 
-/** Paint a plaque face with the source name above its subject collection. */
+/** Draw only the gold rules and lettering; the mahogany below stays visible. */
 function createSectionSignFace(sectionId, collectionLabel, compact = false) {
   const canvas = document.createElement('canvas');
-  canvas.width = compact ? 720 : 1024;
-  canvas.height = compact ? 520 : 256;
+  canvas.width = compact ? 1024 : 1400;
+  canvas.height = compact ? 560 : 360;
   const context = canvas.getContext('2d');
   if (!context) return null;
-  context.fillStyle = '#32251f';
-  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.clearRect(0, 0, canvas.width, canvas.height);
   context.strokeStyle = '#c4a66a';
-  context.lineWidth = 12;
-  context.strokeRect(20, 20, canvas.width - 40, canvas.height - 40);
-  context.lineWidth = 3;
-  context.strokeRect(38, 38, canvas.width - 76, canvas.height - 76);
+  context.lineWidth = compact ? 5 : 6;
+  context.strokeRect(14, 14, canvas.width - 28, canvas.height - 28);
+  context.lineWidth = 2;
+  context.strokeRect(26, 26, canvas.width - 52, canvas.height - 52);
   context.textAlign = 'center';
   context.textBaseline = 'middle';
-  context.fillStyle = '#c4a66a';
-  context.font = compact ? 'bold 27px Georgia, serif' : 'bold 30px Georgia, serif';
-  context.fillText(collectionLabel, canvas.width / 2, compact ? 156 : 76);
-  context.fillStyle = '#f1e6d1';
-  context.font = compact ? 'bold 40px Georgia, serif' : 'bold 72px Georgia, serif';
-  context.fillText(SECTION_NAMES[sectionId].toUpperCase(), canvas.width / 2, compact ? 354 : 162, canvas.width - 100);
+  context.fillStyle = '#e2c78e';
+  context.font = compact ? 'bold 44px Georgia, serif' : 'bold 38px Georgia, serif';
+  context.fillText(collectionLabel, canvas.width / 2, compact ? 172 : 102);
+  context.fillStyle = '#fff3d9';
+  context.font = compact ? 'bold 58px Georgia, serif' : 'bold 78px Georgia, serif';
+  context.fillText(SECTION_NAMES[sectionId].toUpperCase(), canvas.width / 2, compact ? 365 : 232, canvas.width - 110);
 
   const texture = new GFX.CanvasTexture(canvas);
   texture.colorSpace = GFX.SRGBColorSpace;
-  texture.anisotropy = 8;
-  return new GFX.MeshStandardMaterial({ map: texture, roughness: 0.82, metalness: 0 });
+  texture.generateMipmaps = true;
+  texture.minFilter = GFX.LinearMipmapLinearFilter;
+  texture.magFilter = GFX.LinearFilter;
+  texture.anisotropy = 4;
+  texture.needsUpdate = true;
+  return new GFX.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    depthWrite: false,
+    side: GFX.DoubleSide,
+    toneMapped: false,
+  });
 }
 
-function addPlaqueFrame(group, width, woodColor) {
-  const frame = new GFX.MeshStandardMaterial({ color: woodColor, roughness: 0.72, metalness: 0 });
-  group.add(new GFX.Mesh(new GFX.BoxGeometry(width + 0.14, 0.58, 0.08), frame));
+/** Clone the top-surface wood material from a real engine-built mahogany table. */
+function createMahoganyPlaqueMaterial() {
+  const sample = createWoodTable(GFX, {
+    species: 'mahogany',
+    finish: 'lacquered',
+    kind: 'desk',
+    width: 1.4,
+    depth: 0.65,
+    height: 0.12,
+  });
+  const candidates = [];
+  sample.group.traverse((object) => {
+    if (!object.isMesh || !object.material) return;
+    object.geometry?.computeBoundingBox?.();
+    const bounds = object.geometry?.boundingBox;
+    const size = bounds?.getSize?.(new GFX.Vector3());
+    const horizontalArea = size ? size.x * size.z : 0;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of materials) {
+      if (!material?.clone) continue;
+      const hasTexture = Boolean(material.map || material.bumpMap || material.normalMap || material.roughnessMap);
+      candidates.push({ material, score: horizontalArea + (hasTexture ? 1000 : 0) });
+    }
+  });
+  candidates.sort((a, b) => b.score - a.score);
+  if (!candidates.length) throw new Error('The engine mahogany table did not expose a reusable wood material.');
+  const material = candidates[0].material.clone();
+  material.roughness = 0.82;
+  material.metalness = 0;
+  return material;
+}
+const MAHOGANY_PLAQUE_MATERIAL = createMahoganyPlaqueMaterial();
+
+function addPlaqueFrame(group, width) {
+  const frame = MAHOGANY_PLAQUE_MATERIAL.clone();
+  group.add(new GFX.Mesh(new GFX.BoxGeometry(width + 0.02, 0.58, 0.10), frame));
 }
 
 /** The center AI plaque is double-sided because its two shelves face opposite aisles. */
@@ -237,17 +283,17 @@ function addSectionSign(sectionId, bay, width, y = 2.72) {
 
   if (sectionId === 'ai') {
     group.position.set(bay.x, y, bay.z);
-    addPlaqueFrame(group, width, '#5b3d2b');
+    addPlaqueFrame(group, width);
     const wikipediaFace = createSectionSignFace(sectionId, 'WIKIPEDIA COLLECTION');
     const grokipediaFace = createSectionSignFace(sectionId, 'GROKIPEDIA COLLECTION');
     if (wikipediaFace) {
       const front = new GFX.Mesh(new GFX.PlaneGeometry(width, 0.44), wikipediaFace);
-      front.position.z = 0.043;
+      front.position.z = 0.052;
       group.add(front);
     }
     if (grokipediaFace) {
       const reverse = new GFX.Mesh(new GFX.PlaneGeometry(width, 0.44), grokipediaFace);
-      reverse.position.z = -0.043;
+      reverse.position.z = -0.052;
       reverse.rotation.y = Math.PI;
       group.add(reverse);
     }
@@ -262,7 +308,7 @@ function addSectionSign(sectionId, bay, width, y = 2.72) {
     plaque.name = `${SECTION_NAMES[sectionId]} ${sourceId} collection plaque`;
     plaque.position.set(placement.x, y, placement.z);
     plaque.rotation.y = bay.turn;
-    addPlaqueFrame(plaque, ORIGINAL_BOOKCASE_DIMENSIONS.width, sourceId === 'wikipedia' ? '#765237' : '#50352a');
+    addPlaqueFrame(plaque, ORIGINAL_BOOKCASE_DIMENSIONS.width);
     const face = createSectionSignFace(
       sectionId,
       sourceId === 'wikipedia' ? 'WIKIPEDIA COLLECTION' : 'GROKIPEDIA COLLECTION',
@@ -282,45 +328,51 @@ for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
   addSectionSign(sectionId, bay, 1.45, 2.55);
 }
 
-// The AI centerpiece has a clear aisle between the shelving and two reading desks.
-for (const sourceId of SOURCES_IN_ORDER) {
-  const sign = sourceId === 'wikipedia' ? 1 : -1;
+// Two long shared tables flank the central AI cases. Their long axes run north-south,
+// leaving the front approach to both faces of the back-to-back shelves open.
+for (const side of ['left', 'right']) {
+  const sourceId = side === 'left' ? 'wikipedia' : 'grokipedia';
+  const placement = centerLongTablePlacement({ side });
   const wood = { species: SPECIES[sourceId], finish: 'lacquered' };
-  furnish(
-    createWoodTable(GFX, { ...wood, kind: 'desk', width: 1.3, depth: 0.68, height: DESK_HEIGHT }),
-    0, sign * 2.1, sign > 0 ? 0 : Math.PI,
-  );
-  furnish(
-    createWoodChair(GFX, { ...wood, kind: 'armchair' }),
-    0, sign * 3.2, sign > 0 ? Math.PI : 0,
-  );
-  furnish(
-    createWoodTable(GFX, { ...wood, kind: 'side' }),
-    sign > 0 ? -1.25 : 1.25, sign * 2.2, 0,
-  );
+  const table = createWoodTable(GFX, {
+    ...wood,
+    kind: 'desk',
+    width: CENTER_LONG_TABLE_DIMENSIONS.width,
+    depth: CENTER_LONG_TABLE_DIMENSIONS.depth,
+    height: DESK_HEIGHT,
+  });
+  table.group.name = side + ' central AI long table';
+  furnish(table, placement.x, placement.z, placement.rotationY);
 }
 
-// Each wall has two compact, matching desks aligned with its side-by-side bookcases.
-for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
-  for (const [sourceIndex, sourceId] of SOURCES_IN_ORDER.entries()) {
-    const wood = { species: SPECIES[sourceId], finish: 'lacquered' };
-    const localX = sourceIndex === 0 ? -0.43 : 0.43;
-    const desk = pointInBay(bay, localX, -1.55);
-    const chair = pointInBay(bay, localX, -0.4);
-    const sideTable = pointInBay(bay, sourceIndex === 0 ? -1.12 : 1.12, -0.45);
-    furnish(
-      createWoodTable(GFX, { ...wood, kind: 'desk', width: 0.78, depth: 0.62, height: DESK_HEIGHT }),
-      desk.x, desk.z, bay.turn,
-    );
-    furnish(
-      createWoodChair(GFX, { ...wood, kind: 'armchair' }),
-      chair.x, chair.z, bay.turn + Math.PI,
-    );
-    furnish(
-      createWoodTable(GFX, { ...wood, kind: 'side' }),
-      sideTable.x, sideTable.z, bay.turn,
-    );
-  }
+// Four compact reading nooks occupy the open room corners. Wall-section books are
+// placed on the nearest of these shared tables when selected for reading.
+const CORNER_NOOKS = [
+  { cornerX: -1, cornerZ: -1, sourceId: 'wikipedia' },
+  { cornerX: 1, cornerZ: -1, sourceId: 'grokipedia' },
+  { cornerX: 1, cornerZ: 1, sourceId: 'wikipedia' },
+  { cornerX: -1, cornerZ: 1, sourceId: 'grokipedia' },
+];
+for (const [index, corner] of CORNER_NOOKS.entries()) {
+  const nook = cornerReadingNookPlacement({
+    roomHalf: ROOM_HALF,
+    cornerX: corner.cornerX,
+    cornerZ: corner.cornerZ,
+  });
+  const wood = { species: SPECIES[corner.sourceId], finish: 'lacquered' };
+  const table = createWoodTable(GFX, {
+    ...wood,
+    kind: 'desk',
+    width: CORNER_READING_TABLE_DIMENSIONS.width,
+    depth: CORNER_READING_TABLE_DIMENSIONS.depth,
+    height: DESK_HEIGHT,
+  });
+  table.group.name = 'corner ' + (index + 1) + ' reading table';
+  furnish(table, nook.table.x, nook.table.z, nook.table.rotationY);
+
+  const chair = createWoodChair(GFX, { ...wood, kind: 'armchair' });
+  chair.group.name = 'corner ' + (index + 1) + ' reading chair';
+  furnish(chair, nook.chair.x, nook.chair.z, nook.chair.rotationY);
 }
 
 /** Every book: { entry, source, book, key, home } where `home` is where it stands on its shelf. */

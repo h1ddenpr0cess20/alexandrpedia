@@ -10,11 +10,6 @@ const PALETTE = Object.freeze({
   ivory: '#cbbda1', gold: '#a58b60', teal: '#73745b',
   coral: '#98715a', dark: '#43392f',
 });
-const RELIEF = Object.freeze({
-  field: '#818181', fieldLight: '#8b8b8b', navy: '#686868',
-  ivory: '#b7b7b7', gold: '#a2a2a2', teal: '#777777',
-  coral: '#929292', dark: '#626262',
-});
 
 export const RUG_DEFAULTS = Object.freeze({
   width: 3.8, depth: 3.15, thickness: 0.018, fringeLength: 0.075,
@@ -256,25 +251,7 @@ function paintDesign(ctx, width, height, palette) {
   }
 }
 
-function weave(ctx, width, height, relief = false) {
-  const rand = random(1837);
-  ctx.save();
-  ctx.globalAlpha = relief ? 0.24 : 0.16;
-  for (let y = 0; y < height; y += 3) {
-    ctx.fillStyle = y % 6 === 0 ? (relief ? '#b5b5b5' : '#f3dfbd') : (relief ? '#555555' : '#27131d');
-    ctx.fillRect(0, y, width, 0.65);
-  }
-  for (let i = 0; i < 26000; i++) {
-    const x = rand() * width, y = rand() * height;
-    ctx.fillStyle = rand() < 0.5
-      ? (relief ? '#c2c2c2' : '#f1d9ad')
-      : (relief ? '#4d4d4d' : '#2d1723');
-    ctx.fillRect(x, y, 1 + rand() * 2.2, 0.7);
-  }
-  ctx.restore();
-}
-
-function paintCanvas({ relief = false } = {}) {
+function paintCanvas() {
   if (typeof document === 'undefined') return null;
   const width = 1200, height = 1000;
   const canvas = document.createElement('canvas');
@@ -282,16 +259,21 @@ function paintCanvas({ relief = false } = {}) {
   canvas.height = height;
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
-  paintDesign(ctx, width, height, relief ? RELIEF : PALETTE);
-  weave(ctx, width, height, relief);
+  // Keep the medallion and borders, but omit pixel-scale yarn speckles that alias
+  // into crawling lines when the camera moves across the rug.
+  paintDesign(ctx, width, height, PALETTE);
   return canvas;
 }
 
-function textureOf(GFX, canvas, { relief = false } = {}) {
+function textureOf(GFX, canvas) {
   if (!canvas) return null;
   const texture = new GFX.CanvasTexture(canvas);
-  if (!relief) texture.colorSpace = GFX.SRGBColorSpace;
-  texture.anisotropy = 8;
+  texture.colorSpace = GFX.SRGBColorSpace;
+  texture.generateMipmaps = true;
+  texture.minFilter = GFX.LinearMipmapLinearFilter;
+  texture.magFilter = GFX.LinearFilter;
+  texture.anisotropy = 4;
+  texture.needsUpdate = true;
   return texture;
 }
 
@@ -358,10 +340,13 @@ export function createPersianRug(GFX, options = {}) {
   const group = new GFX.Group();
   group.name = 'ornate Persian rug';
   const colorMap = textureOf(GFX, paintCanvas());
-  const bumpMap = textureOf(GFX, paintCanvas({ relief: true }), { relief: true });
+  // Color-only pile avoids high-frequency bump variation, while the detailed
+  // woven illustration remains visible at normal viewing distances.
   const pile = new GFX.MeshStandardMaterial({
-    color: '#ffffff', map: colorMap, bumpMap, bumpScale: 0.0018,
-    roughness: 0.98, metalness: 0,
+    color: '#ffffff',
+    map: colorMap,
+    roughness: 1,
+    metalness: 0,
   });
   const binding = new GFX.MeshStandardMaterial({ color: '#927b55', roughness: 0.9, metalness: 0 });
   const foundation = new GFX.MeshStandardMaterial({ color: '#514638', roughness: 1, metalness: 0 });
@@ -370,14 +355,16 @@ export function createPersianRug(GFX, options = {}) {
   const base = new GFX.Mesh(new GFX.BoxGeometry(o.width, o.thickness, o.depth), foundation);
   base.name = 'rug foundation';
   base.position.y = o.thickness / 2;
-  base.castShadow = base.receiveShadow = true;
+  base.castShadow = false;
+  base.receiveShadow = false;
   group.add(base);
 
   const surface = new GFX.Mesh(new GFX.PlaneGeometry(o.width - 0.02, o.depth - 0.02), pile);
   surface.name = 'woven Persian pile';
   surface.rotation.x = -Math.PI / 2;
   surface.position.y = o.thickness + 0.001;
-  surface.receiveShadow = true;
+  surface.castShadow = false;
+  surface.receiveShadow = false;
   group.add(surface);
 
   const cordY = o.thickness + 0.002;
@@ -387,7 +374,8 @@ export function createPersianRug(GFX, options = {}) {
     const cord = new GFX.Mesh(longCord, binding);
     cord.name = z < 0 ? 'rear gold selvedge' : 'front gold selvedge';
     cord.position.set(0, cordY, z * (o.depth / 2 - 0.006));
-    cord.castShadow = true;
+    cord.castShadow = false;
+    cord.receiveShadow = false;
     group.add(cord);
   }
   const shortCord = new GFX.BoxGeometry(0.008, cordHeight, o.depth - 0.025);
@@ -404,7 +392,8 @@ export function createPersianRug(GFX, options = {}) {
     fringe,
   );
   fringeMesh.name = 'hand-knotted ivory fringe';
-  fringeMesh.castShadow = true;
+  fringeMesh.castShadow = false;
+  fringeMesh.receiveShadow = false;
   group.add(fringeMesh);
 
   group.userData.dimensions = {

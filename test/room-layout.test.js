@@ -1,6 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  CENTER_LONG_TABLE_DIMENSIONS,
+  CORNER_READING_TABLE_DIMENSIONS,
+  WALL_READING_CORNERS,
+  centerLongTablePlacement,
+  cornerReadingNookPlacement,
+  wallReadingNookPlacement,
+} from '../src/room-layout.js';
+import {
   ORIGINAL_BOOKCASE_DIMENSIONS,
   WALL_BOOKCASE_GAP,
   wallCasePlacement,
@@ -59,4 +67,72 @@ test('invalid room and source parameters are rejected', () => {
   assert.throws(() => wallCasePlacement({ roomHalf: 0, bay: bays[0].bay, sourceIndex: 0 }), /roomHalf/);
   assert.throws(() => wallCasePlacement({ roomHalf: HALF, bay: bays[0].bay, sourceIndex: 2 }), /sourceIndex/);
   assert.throws(() => wallCasePlacement({ roomHalf: HALF, bay: null, sourceIndex: 0 }), /bay/);
+});
+
+
+const ROOM_HALF = 7.2;
+
+test('two long tables flank the central AI shelves with open front aisles', () => {
+  const left = centerLongTablePlacement({ side: 'left' });
+  const right = centerLongTablePlacement({ side: 'right' });
+  assert.equal(left.x, -1.75);
+  assert.equal(right.x, 1.75);
+  assert.equal(left.rotationY, Math.PI / 2);
+  assert.equal(right.rotationY, Math.PI / 2);
+  assert.deepEqual(CENTER_LONG_TABLE_DIMENSIONS, { width: 2.4, depth: 0.9 });
+  const innerEdge = 1.75 - left.depth / 2;
+  assert.ok(innerEdge - ORIGINAL_BOOKCASE_DIMENSIONS.width / 2 >= 0.8);
+});
+
+test('four corner nooks put a compact table near each corner with a chair facing it', () => {
+  const corners = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+  const nooks = corners.map(([cornerX, cornerZ]) =>
+    cornerReadingNookPlacement({ roomHalf: ROOM_HALF, cornerX, cornerZ }),
+  );
+  assert.equal(nooks.length, 4);
+  assert.deepEqual(CORNER_READING_TABLE_DIMENSIONS, { width: 0.82, depth: 0.64 });
+  for (const nook of nooks) {
+    assert.ok(Math.abs(nook.table.x) > 5.4 && Math.abs(nook.table.z) > 5.4);
+    assert.ok(Math.abs(nook.chair.x) < ROOM_HALF && Math.abs(nook.chair.z) < ROOM_HALF);
+    const vx = nook.table.x - nook.chair.x;
+    const vz = nook.table.z - nook.chair.z;
+    const facing = { x: Math.sin(nook.chair.rotationY), z: Math.cos(nook.chair.rotationY) };
+    assert.ok(vx * facing.x + vz * facing.z > 0.9);
+  }
+});
+
+test('wall/source book reading positions map to the adjacent corner tables', () => {
+  const expected = {
+    history: [[-1, -1], [1, -1]],
+    science: [[1, -1], [1, 1]],
+    entertainment: [[1, 1], [-1, 1]],
+    philosophy: [[-1, 1], [-1, -1]],
+  };
+  assert.deepEqual(Object.keys(WALL_READING_CORNERS), Object.keys(expected));
+  for (const [sectionId, pairs] of Object.entries(expected)) {
+    pairs.forEach(([cornerX, cornerZ], sourceIndex) => {
+      const nook = wallReadingNookPlacement({ roomHalf: ROOM_HALF, sectionId, sourceIndex });
+      assert.equal(Math.sign(nook.table.x), cornerX);
+      assert.equal(Math.sign(nook.table.z), cornerZ);
+    });
+  }
+});
+
+test('corner tables are kept well clear of the central long tables', () => {
+  const longTables = [
+    centerLongTablePlacement({ side: 'left' }),
+    centerLongTablePlacement({ side: 'right' }),
+  ];
+  for (const [cornerX, cornerZ] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
+    const nook = cornerReadingNookPlacement({ roomHalf: ROOM_HALF, cornerX, cornerZ });
+    for (const table of longTables) {
+      assert.ok(Math.hypot(nook.table.x - table.x, nook.table.z - table.z) > 4.5);
+    }
+  }
+});
+
+test('invalid furniture placement arguments are rejected', () => {
+  assert.throws(() => centerLongTablePlacement({ side: 'north' }), /side/);
+  assert.throws(() => cornerReadingNookPlacement({ roomHalf: ROOM_HALF, cornerX: 0, cornerZ: 1 }), /cornerX/);
+  assert.throws(() => wallReadingNookPlacement({ roomHalf: ROOM_HALF, sectionId: 'unknown', sourceIndex: 0 }), /Unknown wall section/);
 });

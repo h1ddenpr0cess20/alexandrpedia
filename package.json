@@ -13,7 +13,8 @@
     "snapshot-wikipedia": "node scripts/snapshot-wikipedia.mjs",
     "check-titles": "node scripts/check-titles.mjs",
     "serve": "node scripts/serve.mjs 8080",
-    "snapshot-all": "npm run snapshot-wikipedia && npm run snapshot-grokipedia"
+    "snapshot-all": "npm run snapshot-wikipedia && npm run snapshot-grokipedia",
+    "update-articles": "node scripts/update-articles.mjs"
   },
   "license": "UNLICENSED"
 }

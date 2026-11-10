@@ -9,11 +9,10 @@ const DURATION_UNITS = Object.freeze({
 });
 
 export function parseDuration(value) {
-  const match = /^(\\d+)([smhdw])$/i.exec(String(value ?? '').trim());
+  const match = /^(\d+)([smhdw])$/i.exec(String(value ?? '').trim());
   if (!match) throw new Error('Age must be a duration such as 12h, 7d, or 2w.');
   const amount = Number(match[1]);
-  const unit = match[2].toLowerCase();
-  const milliseconds = amount * DURATION_UNITS[unit];
+  const milliseconds = amount * DURATION_UNITS[match[2].toLowerCase()];
   if (!Number.isSafeInteger(milliseconds) || milliseconds <= 0) {
     throw new Error('Age must be a positive, safely representable duration.');
   }
@@ -24,31 +23,23 @@ export function normalizeArticleTitle(value) {
   return String(value ?? '')
     .normalize('NFKC')
     .toLocaleLowerCase('en-US')
-    .replace(/[^\\p{L}\\p{N}]+/gu, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
 }
 
-/**
- * Parse updater options. A selector is mandatory so an accidental bare
- * invocation can never refresh hundreds of articles.
- */
+/** Missing selector is help, never an accidental full-catalog refresh. */
 export function parseUpdateArgs(args) {
-  const options = {
-    mode: null,
-    titles: [],
-    ageMs: null,
-    source: 'both',
-    dryRun: false,
-    help: false,
-  };
+  const options = { mode: null, titles: [], ageMs: null, source: 'both', dryRun: false, help: false };
 
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
-    const [flag, inlineValue] = arg.split(/=(.*)/s, 2);
+    const split = arg.indexOf('=');
+    const flag = split < 0 ? arg : arg.slice(0, split);
+    const inlineValue = split < 0 ? undefined : arg.slice(split + 1);
     const readValue = () => {
       if (inlineValue !== undefined) return inlineValue;
       const value = args[++index];
-      if (!value || value.startsWith('--')) throw new Error(`${flag} requires a value.`);
+      if (!value || value.startsWith('--')) throw new Error(flag + ' requires a value.');
       return value;
     };
 
@@ -84,12 +75,11 @@ export function parseUpdateArgs(args) {
         options.dryRun = true;
         break;
       default:
-        throw new Error(`Unknown option: ${arg}`);
+        throw new Error('Unknown option: ' + arg);
     }
   }
 
-  if (options.help) return Object.freeze(options);
-  if (!options.mode) throw new Error('Choose --all, --title "Article title", or --older-than 30d.');
+  if (options.help || !options.mode) return Object.freeze({ ...options, help: true });
   if (options.mode === 'title') {
     const unique = new Map(options.titles.map((title) => [normalizeArticleTitle(title), title]));
     options.titles = [...unique.values()];
@@ -97,24 +87,28 @@ export function parseUpdateArgs(args) {
   return Object.freeze({ ...options, titles: Object.freeze([...options.titles]) });
 }
 
-/** Match requested titles to the display title or either source's title alias. */
-export function selectCatalogEntries(entries, requestedTitles) {
-  const wanted = new Set(requestedTitles.map(normalizeArticleTitle));
-  const matched = [];
-  const found = new Set();
+/** Resolve curated names and source-specific aliases; preserve unknown one-off titles. */
+export function resolveUpdateEntries(entries, requestedTitles) {
+  const result = [];
+  const seen = new Set();
 
-  for (const entry of entries) {
-    const aliases = [entry.title, ...Object.values(entry.titles ?? {})];
-    if (!aliases.some((title) => wanted.has(normalizeArticleTitle(title)))) continue;
-    matched.push(entry);
-    for (const title of aliases) found.add(normalizeArticleTitle(title));
+  for (const requested of requestedTitles) {
+    const normalized = normalizeArticleTitle(requested);
+    const match = entries.find((entry) =>
+      [entry.title, ...Object.values(entry.titles ?? {})]
+        .some((alias) => normalizeArticleTitle(alias) === normalized)
+    );
+    const entry = match ?? Object.freeze({ title: requested, kind: 'topic', titles: Object.freeze({}) });
+    const key = normalizeArticleTitle(entry.title);
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(entry);
+    }
   }
-
-  const missing = requestedTitles.filter((title) => !found.has(normalizeArticleTitle(title)));
-  return { entries: matched, missing };
+  return result;
 }
 
-/** Missing/invalid timestamps are considered stale so old snapshots are refreshable. */
+/** Missing/invalid timestamps count as stale so old snapshots are refreshable. */
 export function isSnapshotOlderThan(snapshot, ageMs, now = Date.now()) {
   const fetchedAt = Date.parse(snapshot?.fetchedAt ?? '');
   return !Number.isFinite(fetchedAt) || fetchedAt <= now - ageMs;
