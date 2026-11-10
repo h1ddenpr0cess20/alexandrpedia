@@ -1,7 +1,7 @@
 {
   "name": "alexandrpedia",
   "version": "0.1.0",
-  "description": "A bookcase of AI topics, people and companies: each article from Wikipedia or Grokipedia is a book on the shelf, and a click opens it to read.",
+  "description": "A four-sided encyclopedia reading room: AI at the center, surrounded by History, Science, American Popular Culture, and Philosophy & Ideas. Each article is a book from a committed Wikipedia or Grokipedia snapshot.",
   "type": "module",
   "private": true,
   "engines": {
@@ -12,7 +12,8 @@
     "snapshot-grokipedia": "node scripts/snapshot-grokipedia.mjs",
     "snapshot-wikipedia": "node scripts/snapshot-wikipedia.mjs",
     "check-titles": "node scripts/check-titles.mjs",
-    "serve": "node scripts/serve.mjs 8080"
+    "serve": "node scripts/serve.mjs 8080",
+    "snapshot-all": "npm run snapshot-wikipedia && npm run snapshot-grokipedia"
   },
   "license": "UNLICENSED"
 }
