@@ -116,7 +116,7 @@ for (const source of SOURCES) {
 // Two bookcases side by side against the wall, the Wikipedia one on the left.
 const cases = {};
 SOURCES.forEach((source, i) => {
-  const shelf = createBookcase(GFX, { species: SPECIES[source.id], shelves: 5, width: 0.8, depth: 0.34, height: 2.2 });
+  const shelf = createBookcase(GFX, { species: SPECIES[source.id], shelves: 4, width: 0.8, depth: 0.34, height: 2.2 });
   shelf.group.position.set(i === 0 ? -0.45 : 0.45, 0, 0);
   scene.add(shelf.group);
   cases[source.id] = shelf;
