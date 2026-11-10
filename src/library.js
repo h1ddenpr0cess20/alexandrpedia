@@ -12,6 +12,16 @@ import { SOURCES, sourceById } from './sources.js';
 export const MIN_PAGES = 2;
 export const MAX_PAGES = 320;
 
+/** Four blank pages at the back give each book a little physical weight. */
+export const BOOK_END_PAGES = 4;
+
+/** Keep measured article pages intact, then reserve up to four blank pages at the end. */
+export function pageCountForBook(measuredPages) {
+  const pages = Number.isFinite(measuredPages) ? Math.max(0, Math.floor(measuredPages)) : 0;
+  const contentPages = Math.max(MIN_PAGES, pages + (pages % 2));
+  return Math.min(MAX_PAGES, contentPages + BOOK_END_PAGES);
+}
+
 const cache = new Map();
 
 /** How many pages to make a book with for a text. Always even: pages go two to a leaf. */

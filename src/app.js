@@ -18,7 +18,7 @@ import { createWoodTable } from '../vendor/madness-engine/src/props/wood-table.j
 import { createWoodChair } from '../vendor/madness-engine/src/props/wood-chair.js';
 import { CATALOG, KINDS, keyOf } from './catalog.js';
 import { SOURCES } from './sources.js';
-import { loadOrFallback, MAX_PAGES } from './library.js';
+import { loadOrFallback, MAX_PAGES, pageCountForBook } from './library.js';
 import { flowPages } from '../vendor/madness-engine/src/props/book-art.js';
 
 // Not walnut: the engine paints walnut from a photograph, on canvases WebGPU refuses to copy before the photo has decoded.
@@ -141,7 +141,7 @@ for (const source of SOURCES) {
     const article = await loadOrFallback(source.id, entry);
     const pages = flowPages(article.text, { print: true });
     const visiblePages = pages.slice(0, MAX_PAGES);
-    const pageCount = Math.max(2, visiblePages.length + (visiblePages.length % 2));
+    const pageCount = pageCountForBook(visiblePages.length);
     if (pages.length > MAX_PAGES) {
       console.warn(`${article.title}: ${pages.length} measured pages exceeds the engine's ${MAX_PAGES}-page limit; remaining text cannot fit in one book.`);
     }

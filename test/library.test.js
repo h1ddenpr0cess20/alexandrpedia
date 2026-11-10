@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CATALOG, KINDS, keyOf } from '../src/catalog.js';
 import { FALLBACKS, fallbackFor } from '../src/fallbacks.js';
-import { MAX_PAGES, MIN_PAGES, blocksOf, clearCache, loadArticle, loadOrFallback, pageCountFor } from '../src/library.js';
+import { BOOK_END_PAGES, MAX_PAGES, MIN_PAGES, blocksOf, clearCache, loadArticle, loadOrFallback, pageCountFor, pageCountForBook } from '../src/library.js';
 import { GROKIPEDIA, WIKIPEDIA, SOURCES } from '../src/sources.js';
 
 test('the catalog has topics, people and companies, with no repeated titles or keys', () => {
@@ -27,6 +27,16 @@ test('page metadata follows content length without arbitrary extra pages', () =>
   assert.ok(long > medium);
   assert.equal(medium % 2, 0);
   assert.equal(pageCountFor('x'.repeat(10_000_000)), MAX_PAGES);
+});
+
+test('each book reserves four blank pages after its measured article', () => {
+  assert.equal(BOOK_END_PAGES, 4);
+  assert.equal(pageCountForBook(0), 6);
+  assert.equal(pageCountForBook(1), 6);
+  assert.equal(pageCountForBook(8), 12);
+  assert.equal(pageCountForBook(314), 318);
+  assert.equal(pageCountForBook(317), MAX_PAGES);
+  assert.equal(pageCountForBook(319), MAX_PAGES);
 });
 
 test('a text becomes blocks: headings and paragraphs', () => {
