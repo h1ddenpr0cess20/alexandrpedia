@@ -30,5 +30,7 @@ jobs:
           node --check src/article-update.js
           node --check scripts/update-articles.mjs
           node --check test/article-update.test.js
+      - name: Verify article updater CLI loads
+        run: npm run update-articles -- --help
       - name: Run tests
         run: npm test
