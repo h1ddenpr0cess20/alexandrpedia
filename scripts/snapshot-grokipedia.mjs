@@ -76,12 +76,12 @@ for (const [i, entry] of entries.entries()) {
       continue;
     }
 
-    const json = `${JSON.stringify({ ...result.article, fetchedAt: new Date().toISOString() }, null, 1)}\\n`;
+    const json = `${JSON.stringify({ ...result.article, fetchedAt: new Date().toISOString() }, null, 1)}\n`;
     const tmp = new URL(`${name}.tmp`, dir);
     await writeFile(tmp, json);
     await rename(tmp, file);
     saved.push(entry.title);
-    const words = result.article.text.split(/\\s+/).filter(Boolean).length;
+    const words = result.article.text.split(/\s+/).filter(Boolean).length;
     console.log(`${clock()} ok   ${label} (${words} words, ${Buffer.byteLength(json)} bytes)`);
   } catch (error) {
     failed.push(`${entry.title} (${error.message})`);
@@ -89,7 +89,7 @@ for (const [i, entry] of entries.entries()) {
   }
 }
 
-const list = (label, items) => items.length ? `\\n${label} (${items.length}): ${items.join('; ')}` : '';
-console.log(`\\nDone: saved ${saved.length}, already saved ${kept.length}, missing ${missing.length}, failed ${failed.length}.`);
+const list = (label, items) => items.length ? `\n${label} (${items.length}): ${items.join('; ')}` : '';
+console.log(`\nDone: saved ${saved.length}, already saved ${kept.length}, missing ${missing.length}, failed ${failed.length}.`);
 console.log(list('Missing on Grokipedia', missing) + list('Failed', failed));
 if (failed.length || missing.length) process.exitCode = 1;
