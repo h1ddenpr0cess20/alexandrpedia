@@ -51,17 +51,22 @@ test('Wikipedia and Grokipedia address pages by the title with underscores', () 
   assert.equal(GROKIPEDIA.pageUrl('Neural network (machine learning)'), 'https://grokipedia.com/page/Neural_network_(machine_learning)');
 });
 
-test('the Wikipedia fetcher reads the extract of the page the API returns', async () => {
-  const body = JSON.stringify({ query: { pages: [{ title: 'Nvidia', fullurl: 'https://en.wikipedia.org/wiki/Nvidia', extract: 'Nvidia is a company.\n\n== History ==\nIt began.' }] } });
+test('the Wikipedia source reads a committed local JSON snapshot', async () => {
+  const body = JSON.stringify({
+    title: 'Nvidia',
+    url: 'https://en.wikipedia.org/wiki/Nvidia',
+    text: 'Nvidia is a company.\\n\\n#History\\n\\nIt began.',
+    license: 'CC BY-SA 4.0',
+  });
   const { fetchImpl, calls } = scripted([[200, {}, body]]);
-  const article = await WIKIPEDIA.fetch('Nvidia', { fetchImpl, sleep: async () => {} });
-  assert.match(calls[0], /origin=%2A|origin=\*/);
+  const article = await WIKIPEDIA.fetch('Nvidia', { fetchImpl });
+  assert.ok(new URL(calls[0]).pathname.endsWith('/data/wikipedia/Nvidia.json'));
   assert.equal(article.title, 'Nvidia');
-  assert.equal(article.text, 'Nvidia is a company.\n\n#History\n\nIt began.');
+  assert.equal(article.text, 'Nvidia is a company.\\n\\n#History\\n\\nIt began.');
+  assert.equal(article.license, 'CC BY-SA 4.0');
 });
 
-test('a missing Wikipedia article is reported as not found', async () => {
-  const body = JSON.stringify({ query: { pages: [{ title: 'Nope', missing: true }] } });
-  const { fetchImpl } = scripted([[200, {}, body]]);
+test('a missing local Wikipedia snapshot is reported as not found', async () => {
+  const { fetchImpl } = scripted([[404]]);
   await assert.rejects(WIKIPEDIA.fetch('Nope', { fetchImpl }), { name: 'ArticleNotFound' });
 });
