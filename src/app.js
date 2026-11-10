@@ -447,7 +447,8 @@ for (const [sectionId, catalog] of Object.entries(SECTION_CATALOGS)) {
         textureSize: 512,
         bump: false,
       };
-      const book = createBook(GFX, { ...bookOptions, size: BOOK_SCALE });
+      // Shelved books are shells: their cover and size, with the leaves built when the book is taken down.
+      const book = createBook(GFX, { ...bookOptions, size: BOOK_SCALE, shell: true });
       const record = {
         entry, source, article, book, bookOptions, pages: visiblePages.length,
         key: `${sectionId}:${sourceId}:${keyOf(entry)}`,
@@ -668,6 +669,7 @@ const moving = new Set(); // books that are opening or closing
 function takeDown(record) {
   const { book, home } = record;
   const place = readingPlace(record);
+  book.build();   // the leaves, the first time the book is wanted
   home.parent.remove(book.group);
   scene.add(book.group);
   book.group.position.copy(place.position);
