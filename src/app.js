@@ -57,7 +57,7 @@ function readAt(record) {
 const READ_UPRIGHT = new GFX.Quaternion().setFromAxisAngle(new GFX.Vector3(1, 0, 0), Math.PI / 2);
 
 // A view that can go from nearly level to nearly overhead, and in close or far out.
-const VIEW_HOME_ZOOM = 1.6;
+const VIEW_HOME_ZOOM = 2.0;
 const BOOK_VIEW_ZOOM = 0.68;
 const { createView } = defineView({
   home: { yaw: Math.PI / 4, pitch: 0.48, zoom: VIEW_HOME_ZOOM },
@@ -80,7 +80,7 @@ const say = (text = '') => { status.textContent = text; status.hidden = !text; }
 await loadingStep('Starting the renderer…');
 const stage = await createStage(document.getElementById('host'), {
   room: paintRoom(), shadowSize: 2048, fixtures: 0, label: 'alexandrpedia',
-  lens: { distance: 7.5, fov: 36 },
+  lens: { distance: 9.5, fov: 36 },
   view: createView(),
 });
 const { scene, camera, renderer } = stage;
@@ -132,7 +132,7 @@ scene.add(centerRug.group);
 for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
   for (const sourceId of SOURCES_IN_ORDER) {
     const side = sourceId === 'wikipedia' ? 1 : -1;
-    const rug = createPersianRug(GFX, { width: 2.1, depth: 2.9, fringeLength: 0.04 });
+    const rug = createPersianRug(GFX, { width: 2.1, depth: 2.2, fringeLength: 0.04 });
     rug.group.name = `${sectionId} ${sourceId} reading rug`;
     rug.group.position.copy(pointInBay(bay, -1.65, side * 1.85, 0.01));
     rug.group.rotation.y = bay.turn;
