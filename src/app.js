@@ -444,7 +444,7 @@ for (const [sectionId, catalog] of Object.entries(SECTION_CATALOGS)) {
         leafPitch: BOOK_LEAF_PITCH,
         deferPages: true,
         bookplate: false,
-        textureSize: 256,
+        textureSize: 512,
         bump: false,
       };
       const book = createBook(GFX, { ...bookOptions, size: BOOK_SCALE });
