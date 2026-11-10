@@ -62,8 +62,14 @@ export function wallCasePlacement({
 
 export const CENTER_LONG_TABLE_DIMENSIONS = Object.freeze({ width: 2.4, depth: 0.9 });
 export const CORNER_READING_TABLE_DIMENSIONS = Object.freeze({ width: 0.82, depth: 0.64 });
-export const CORNER_TABLE_SETBACK = 2.0;
-export const CORNER_CHAIR_DISTANCE = 1.0;
+export const CORNER_TABLE_SETBACK = 2.1;
+/**
+ * Seated figures' knees reach about 0.5 m forward of the seat, so each chair's middle stands
+ * this far from the table's edge (the desk's drawers are at that edge), not right beside it.
+ */
+export const SEATED_KNEE_CLEARANCE = 0.6;
+// A corner table's corner lies about 0.52 m from its middle along the diagonal the chairs stand on.
+export const CORNER_CHAIR_DISTANCE = 0.52 + SEATED_KNEE_CLEARANCE;
 /**
  * Seat and table heights, in metres, sized to the human model (people/human): with his feet on the
  * floor, a seated reader's buttocks rest at about 0.50 m. A desk stands about 0.27 m above the seat.
@@ -73,7 +79,6 @@ export const TABLE_HEIGHT = 0.77;
 export const CENTER_CHAIR_DIMENSIONS = Object.freeze({ depth: 0.44 });
 /** The two chairs sit this far either side of the middle of a long table's outer side. */
 export const CENTER_CHAIR_SPACING = 0.6;
-export const CENTER_CHAIR_CLEARANCE = 0.06;
 
 /**
  * Two dining chairs on the outer long side of a central table, facing it. The inner side is kept
@@ -82,7 +87,7 @@ export const CENTER_CHAIR_CLEARANCE = 0.06;
 export function centerLongTableChairs({ side, offset = 1.75 } = {}) {
   const table = centerLongTablePlacement({ side, offset });
   const outward = side === 'left' ? -1 : 1;
-  const x = table.x + outward * (table.depth / 2 + CENTER_CHAIR_CLEARANCE + CENTER_CHAIR_DIMENSIONS.depth / 2);
+  const x = table.x + outward * (table.depth / 2 + SEATED_KNEE_CLEARANCE);
   const rotationY = Math.atan2(-outward, 0); // the chair's front (+z) turns toward the table
   const chairs = [-1, 1].map((sign) => Object.freeze({ x, z: sign * CENTER_CHAIR_SPACING, rotationY }));
   return Object.freeze({

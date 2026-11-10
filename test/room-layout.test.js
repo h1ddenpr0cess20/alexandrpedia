@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CENTER_CHAIR_SPACING,
+  SEATED_KNEE_CLEARANCE,
   CENTER_LONG_TABLE_DIMENSIONS,
   CORNER_READING_TABLE_DIMENSIONS,
   WALL_READING_CORNERS,
@@ -155,7 +156,7 @@ test('each central long table has two chairs on its outer side, facing it, leavi
     const outward = side === 'left' ? -1 : 1;
     for (const chair of chairs) {
       assert.ok(Math.sign(chair.x - table.x) === outward, `${side}: chair must be on the outer side`);
-      assert.ok(Math.abs(Math.abs(chair.x - table.x) - (table.depth / 2 + 0.28)) < 0.05);
+      assert.ok(Math.abs(Math.abs(chair.x - table.x) - (table.depth / 2 + SEATED_KNEE_CLEARANCE)) < 1e-9);
       assert.ok(Math.abs(Math.abs(chair.z) - CENTER_CHAIR_SPACING) < 1e-9);
       // The chair's front (+z) turns toward the table: the table lies along +x or -x from it.
       assert.ok(Math.abs(Math.sin(chair.rotationY) - (-outward)) < 1e-9);
