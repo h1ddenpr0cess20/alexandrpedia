@@ -70,6 +70,8 @@ function readingPlace(record) {
 // A view that can go from nearly level to nearly overhead, and in close or far out.
 const VIEW_HOME_YAW = Math.PI / 4;
 const READ_UPRIGHT = new GFX.Quaternion().setFromAxisAngle(new GFX.Vector3(1, 0, 0), Math.PI / 2);
+// Upright, its cover facing the viewer's home view, so an open book stands squarely in front of you whichever table it is on.
+const READ_FACING_VIEWER = new GFX.Quaternion().setFromAxisAngle(AXIS_Y, VIEW_HOME_YAW).multiply(READ_UPRIGHT);
 const VIEW_HOME_ZOOM = 2.0;
 const { createView, groundAxes } = defineView({
   home: { yaw: VIEW_HOME_YAW, pitch: 0.48, zoom: VIEW_HOME_ZOOM },
@@ -661,7 +663,7 @@ function takeDown(record) {
   home.parent.remove(book.group);
   scene.add(book.group);
   book.group.position.copy(place.position);
-  book.group.quaternion.copy(READ_UPRIGHT);
+  book.group.quaternion.copy(READ_FACING_VIEWER);
   book.group.scale.setScalar(1);
   reading = record;
   moving.add(record);
