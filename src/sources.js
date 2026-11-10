@@ -13,6 +13,7 @@ export const slugOf = (title) => String(title).trim().replace(/\s+/g, '_');
 export const WIKIPEDIA = Object.freeze({
   id: 'wikipedia',
   name: 'Wikipedia',
+  print: true,
   license: 'CC BY-SA 4.0',
   pageUrl: (title) => `https://en.wikipedia.org/wiki/${encodeURIComponent(slugOf(title))}`,
   async fetch(title) {
@@ -23,6 +24,7 @@ export const WIKIPEDIA = Object.freeze({
 export const GROKIPEDIA = Object.freeze({
   id: 'grokipedia',
   name: 'Grokipedia',
+  print: false, // Use the engine's Madman's Hand page lettering.
   license: 'See grokipedia.com',
   pageUrl: (title) => `https://grokipedia.com/page/${encodeURIComponent(slugOf(title))}`,
   async fetch(title) {

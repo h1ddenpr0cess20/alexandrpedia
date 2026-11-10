@@ -16,6 +16,8 @@ test('the catalog has topics, people and companies, with no repeated titles or k
 test('both sources sit on the same shelves, in the same order', () => {
   assert.deepEqual(SOURCES.map((s) => s.id), ['wikipedia', 'grokipedia']);
   assert.equal(SOURCES.length, 2);
+  assert.equal(WIKIPEDIA.print, true, 'Wikipedia keeps its standard printed pages');
+  assert.equal(GROKIPEDIA.print, false, 'Grokipedia uses the engine\'s Madman\'s Hand pages');
 });
 
 test('page metadata follows content length without arbitrary extra pages', () => {

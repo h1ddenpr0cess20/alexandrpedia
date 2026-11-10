@@ -140,7 +140,9 @@ for (const source of SOURCES) {
   const stock = stockBooks(CATALOG.length, source.id === 'wikipedia' ? 3 : 4);
   const prepared = await Promise.all(CATALOG.map(async (entry, index) => {
     const article = await loadOrFallback(source.id, entry);
-    const pages = flowPages(article.text, { print: true });
+    // Measure using the same type treatment the book uses when it is opened.
+    const print = source.print;
+    const pages = flowPages(article.text, { print });
     const visiblePages = pages.slice(0, MAX_PAGES);
     const pageCount = pageCountForBook(visiblePages.length);
     if (pages.length > MAX_PAGES) {
@@ -154,7 +156,7 @@ for (const source of SOURCES) {
       subtitle: `${source.name} · ${KINDS[entry.kind]}`,
       pageCount,
       pages: visiblePages,
-      print: true,
+      print,
       width: BOOK_PAGE_WIDTH,
       // Preserve the old stock book's physical height range while using one
       // common scale for all other axes, so spine width is entirely content-driven.
