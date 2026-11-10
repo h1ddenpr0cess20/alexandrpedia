@@ -5,6 +5,7 @@
 // NODE_USE_ENV_PROXY=1 (Node 22.21 or later). Run: npm run snapshot-wikipedia
 import { mkdir, rename, stat, writeFile } from 'node:fs/promises';
 import { CATALOG } from '../src/catalog.js';
+import { allCatalogEntries } from '../src/sections.js';
 import { slugOf } from '../src/sources.js';
 import { wikipediaExtractToText } from '../src/text.js';
 
@@ -15,6 +16,7 @@ const MAX_TRIES = 3;            // tries for one article after other failures (n
 const LICENSE = 'CC BY-SA 4.0';
 const USER_AGENT = 'snapshot-script/1.0';
 const dir = new URL('../data/wikipedia/', import.meta.url);
+const entries = allCatalogEntries(CATALOG);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const clock = () => new Date().toISOString().slice(11, 19);
 const exists = (file) => stat(file).then(() => true, () => false);
@@ -92,11 +94,11 @@ await mkdir(dir, { recursive: true });
 const saved = [], kept = [], missing = [], failed = [];
 let stopped = false;
 
-for (const [i, entry] of CATALOG.entries()) {
+for (const [i, entry] of entries.entries()) {
   const title = entry.titles?.wikipedia ?? entry.title;
   const name = `${encodeURIComponent(slugOf(title))}.json`;
   const file = new URL(name, dir);
-  const label = `[${i + 1}/${CATALOG.length}] ${entry.title}`;
+  const label = `[${i + 1}/${entries.length}] ${entry.title}`;
   if (await exists(file)) { kept.push(entry.title); continue; }
 
   const answer = await obtain(title, label);
