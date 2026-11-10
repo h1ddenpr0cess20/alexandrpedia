@@ -15,6 +15,9 @@ export const RUG_DEFAULTS = Object.freeze({
   width: 3.8, depth: 3.15, thickness: 0.018, fringeLength: 0.075,
 });
 
+/** How far the woven pile stands above the foundation's top, in metres. */
+const PILE_LIFT = 0.006;
+
 function random(seed = 7319) {
   let state = seed >>> 0;
   return () => {
@@ -359,16 +362,20 @@ export function createPersianRug(GFX, options = {}) {
   base.receiveShadow = false;
   group.add(base);
 
+  // The pile floats a few millimetres above the foundation. A 1 mm gap z-fought
+  // (shimmered) when the camera stood far off, where depth precision is coarse.
+  const pileY = o.thickness + PILE_LIFT;
   const surface = new GFX.Mesh(new GFX.PlaneGeometry(o.width - 0.02, o.depth - 0.02), pile);
   surface.name = 'woven Persian pile';
   surface.rotation.x = -Math.PI / 2;
-  surface.position.y = o.thickness + 0.001;
+  surface.position.y = pileY;
   surface.castShadow = false;
   surface.receiveShadow = false;
   group.add(surface);
 
-  const cordY = o.thickness + 0.002;
-  const cordHeight = 0.004;
+  // The gold selvedges stand from the foundation's top and rise above the pile.
+  const cordHeight = 0.008;
+  const cordY = o.thickness + cordHeight / 2;
   const longCord = new GFX.BoxGeometry(o.width - 0.025, cordHeight, 0.008);
   for (const z of [-1, 1]) {
     const cord = new GFX.Mesh(longCord, binding);
@@ -389,7 +396,7 @@ export function createPersianRug(GFX, options = {}) {
   }
 
   const fringeMesh = new GFX.Mesh(
-    fringeGeometry(GFX, o.width - 0.025, o.depth, o.thickness + 0.001, o.fringeLength),
+    fringeGeometry(GFX, o.width - 0.025, o.depth, o.thickness + 0.003, o.fringeLength),
     fringe,
   );
   fringeMesh.name = 'hand-knotted ivory fringe';

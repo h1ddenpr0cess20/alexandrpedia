@@ -62,8 +62,28 @@ export function wallCasePlacement({
 
 export const CENTER_LONG_TABLE_DIMENSIONS = Object.freeze({ width: 2.4, depth: 0.9 });
 export const CORNER_READING_TABLE_DIMENSIONS = Object.freeze({ width: 0.82, depth: 0.64 });
-export const CORNER_TABLE_SETBACK = 1.65;
-export const CORNER_CHAIR_DISTANCE = 0.98;
+export const CORNER_TABLE_SETBACK = 2.0;
+export const CORNER_CHAIR_DISTANCE = 1.0;
+export const CENTER_CHAIR_DIMENSIONS = Object.freeze({ depth: 0.44 });
+/** The two chairs sit this far either side of the middle of a long table's outer side. */
+export const CENTER_CHAIR_SPACING = 0.6;
+export const CENTER_CHAIR_CLEARANCE = 0.06;
+
+/**
+ * Two dining chairs on the outer long side of a central table, facing it. The inner side is kept
+ * clear so the aisle to the back-to-back shelves stays open. `seat` is the middle of the pair.
+ */
+export function centerLongTableChairs({ side, offset = 1.75 } = {}) {
+  const table = centerLongTablePlacement({ side, offset });
+  const outward = side === 'left' ? -1 : 1;
+  const x = table.x + outward * (table.depth / 2 + CENTER_CHAIR_CLEARANCE + CENTER_CHAIR_DIMENSIONS.depth / 2);
+  const rotationY = Math.atan2(-outward, 0); // the chair's front (+z) turns toward the table
+  const chairs = [-1, 1].map((sign) => Object.freeze({ x, z: sign * CENTER_CHAIR_SPACING, rotationY }));
+  return Object.freeze({
+    chairs: Object.freeze(chairs),
+    seat: Object.freeze({ x, z: 0 }),
+  });
+}
 
 /** Two long shared tables flank the central AI cases without blocking either front aisle. */
 export function centerLongTablePlacement({ side, offset = 1.75 } = {}) {
@@ -108,21 +128,42 @@ export function cornerReadingNookPlacement({
     z: cornerZ * (roomHalf - setback),
   };
   const inward = { x: -cornerX / Math.SQRT2, z: -cornerZ / Math.SQRT2 };
-  const chair = {
-    x: table.x + inward.x * chairDistance,
-    z: table.z + inward.z * chairDistance,
-  };
+
+  // Four chairs stand on the table's diagonals, one per side of the corner. The first is
+  // the inward chair, facing the room; the others sit beside it, all clear of the walls.
+  const diagonals = [
+    inward,
+    { x: inward.z, z: -inward.x },
+    { x: -inward.z, z: inward.x },
+    { x: -inward.x, z: -inward.z },
+  ];
+  const chairs = diagonals.map((d) => Object.freeze({
+    x: table.x + d.x * chairDistance,
+    z: table.z + d.z * chairDistance,
+    rotationY: Math.atan2(-d.x, -d.z),
+  }));
 
   return Object.freeze({
     table: Object.freeze({
       ...table,
       rotationY: Math.atan2(inward.x, inward.z),
     }),
-    chair: Object.freeze({
-      ...chair,
-      rotationY: Math.atan2(-inward.x, -inward.z),
-    }),
+    chair: chairs[0],
+    chairs: Object.freeze(chairs),
     ...CORNER_READING_TABLE_DIMENSIONS,
+  });
+}
+
+/**
+ * Which way a book on a table should lie, and where the camera should stand to read it. The
+ * book's head (its +z) points away from the reader's seat, so its text reads upright from there.
+ * Both are yaw angles: the book's about +y, the camera's measured from +z as `view` uses it.
+ */
+export function readingOrientation({ table, seat }) {
+  const away = { x: table.x - seat.x, z: table.z - seat.z };
+  return Object.freeze({
+    bookYaw: Math.atan2(away.x, away.z),
+    cameraYaw: Math.atan2(-away.x, -away.z),
   });
 }
 

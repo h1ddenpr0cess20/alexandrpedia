@@ -23,7 +23,7 @@ import { loadArticle, MAX_PAGES, pageCountForBook } from './library.js';
 import { flowPages } from '../vendor/madness-engine/src/props/book-art.js';
 import { shelveBooksByPriority } from './shelving.js';
 import { catalogsForSections, SECTION_NAMES } from './sections.js';
-import { CENTER_LONG_TABLE_DIMENSIONS, CORNER_READING_TABLE_DIMENSIONS, ORIGINAL_BOOKCASE_DIMENSIONS, WALL_SIGN_FRAME_EXTRA, centerLongTablePlacement, cornerReadingNookPlacement, wallCasePlacement, wallReadingNookPlacement } from './room-layout.js';
+import { CENTER_LONG_TABLE_DIMENSIONS, CORNER_READING_TABLE_DIMENSIONS, ORIGINAL_BOOKCASE_DIMENSIONS, WALL_SIGN_FRAME_EXTRA, centerLongTableChairs, centerLongTablePlacement, cornerReadingNookPlacement, readingOrientation, wallCasePlacement, wallReadingNookPlacement } from './room-layout.js';
 
 // Wikipedia and Grokipedia retain their oak and mahogany identities. Subject nooks have
 // complementary woods, while the AI centerpiece uses walnut as a neutral focal point.
@@ -49,27 +49,41 @@ function pointInBay(bay, x, z, y = 0) {
     .add(new GFX.Vector3(bay.x, 0, bay.z));
 }
 
-function readAt(record) {
+/**
+ * Where a book lies when it is taken down: the spot on its table, the yaw its head points to
+ * (away from its reader, so the text reads upright from the seat) and the yaw the camera takes.
+ */
+function readingPlace(record) {
   const sourceIndex = SOURCES_IN_ORDER.indexOf(record.source.id);
+  // Lying flat: its boards rest on the table top, just above it.
+  const bookHeight = DESK_HEIGHT + 0.004;
   if (record.sectionId === 'ai') {
     const side = sourceIndex === 0 ? 'left' : 'right';
     const placement = centerLongTablePlacement({ side });
-    return pointInBay(AI_BAY, placement.x, placement.z, DESK_HEIGHT + 0.42);
+    const { seat } = centerLongTableChairs({ side });
+    const position = pointInBay(AI_BAY, placement.x, placement.z, bookHeight);
+    return { position, ...readingOrientation({ table: placement, seat }) };
   }
   const nook = wallReadingNookPlacement({
     roomHalf: ROOM_HALF,
     sectionId: record.sectionId,
     sourceIndex,
   });
-  return new GFX.Vector3(nook.table.x, DESK_HEIGHT + 0.42, nook.table.z);
+  const position = new GFX.Vector3(nook.table.x, bookHeight, nook.table.z);
+  return { position, ...readingOrientation({ table: nook.table, seat: nook.chair }) };
 }
-const READ_UPRIGHT = new GFX.Quaternion().setFromAxisAngle(new GFX.Vector3(1, 0, 0), Math.PI / 2);
+
+/** The yaw equal to `target` that is nearest `current`, so the view turns the short way round. */
+function nearestYaw(current, target) {
+  return target + Math.round((current - target) / (Math.PI * 2)) * Math.PI * 2;
+}
 
 // A view that can go from nearly level to nearly overhead, and in close or far out.
+const VIEW_HOME_YAW = Math.PI / 4;
 const VIEW_HOME_ZOOM = 2.0;
 const BOOK_VIEW_ZOOM = 0.68;
 const { createView } = defineView({
-  home: { yaw: Math.PI / 4, pitch: 0.48, zoom: VIEW_HOME_ZOOM },
+  home: { yaw: VIEW_HOME_YAW, pitch: 0.48, zoom: VIEW_HOME_ZOOM },
   limits: { pitch: [0.08, 1.35], zoom: [0.35, 2.4] },
 });
 
@@ -93,8 +107,7 @@ const stage = await createStage(document.getElementById('host'), {
   view: createView(),
 });
 const { scene, camera, renderer } = stage;
-// Close enough to read a spine or a page: the stage's near plane (0.3 m) would cut the book away.
-camera.near = 0.02;
+// Far enough to see the whole room when zoomed out; the stage moves the near plane to suit the distance.
 camera.far = 120;
 camera.updateProjectionMatrix();
 stage.target.copy(SHELF_TARGET);
@@ -317,6 +330,13 @@ for (const side of ['left', 'right']) {
   });
   table.group.name = side + ' central AI long table';
   furnish(table, placement.x, placement.z, placement.rotationY);
+
+  // Two chairs on the outer long side, so readers sit beside the book and the aisle to the shelves stays open.
+  centerLongTableChairs({ side }).chairs.forEach((spot, index) => {
+    const chair = createWoodChair(GFX, { ...wood, kind: 'dining' });
+    chair.group.name = `${side} central AI reading chair ${index + 1}`;
+    furnish(chair, spot.x, spot.z, spot.rotationY);
+  });
 }
 
 // Four compact reading nooks occupy the open room corners. Wall-section books are
@@ -344,9 +364,12 @@ for (const [index, corner] of CORNER_NOOKS.entries()) {
   table.group.name = 'corner ' + (index + 1) + ' reading table';
   furnish(table, nook.table.x, nook.table.z, nook.table.rotationY);
 
-  const chair = createWoodChair(GFX, { ...wood, kind: 'armchair' });
-  chair.group.name = 'corner ' + (index + 1) + ' reading chair';
-  furnish(chair, nook.chair.x, nook.chair.z, nook.chair.rotationY);
+  // Four chairs around each table: the inward one, then three more spaced on the other diagonals.
+  nook.chairs.forEach((spot, chairIndex) => {
+    const chair = createWoodChair(GFX, { ...wood, kind: 'armchair' });
+    chair.group.name = 'corner ' + (index + 1) + ' reading chair ' + (chairIndex + 1);
+    furnish(chair, spot.x, spot.z, spot.rotationY);
+  });
 }
 
 /** Every book: { entry, source, book, key, home } where `home` is where it stands on its shelf. */
@@ -449,15 +472,19 @@ const moving = new Set(); // books that are opening or closing
 
 function takeDown(record) {
   const { book, home } = record;
+  const place = readingPlace(record);
   home.parent.remove(book.group);
   scene.add(book.group);
-  book.group.position.copy(readAt(record));
-  book.group.quaternion.copy(READ_UPRIGHT);
+  book.group.position.copy(place.position);
+  // Lying flat on the table, head away from the reader.
+  book.group.quaternion.setFromAxisAngle(AXIS_Y, place.bookYaw);
   book.group.scale.setScalar(1);
   reading = record;
   moving.add(record);
   stage.view.zoomBy(BOOK_VIEW_ZOOM / stage.view.aim.zoom);
-  focusOn(readAt(record));
+  // The camera moves to the reader's side of the table, so the page is seen the right way up.
+  stage.view.aim.yaw = nearestYaw(stage.view.aim.yaw, place.cameraYaw);
+  focusOn(place.position);
 }
 
 function putBack(record) {
@@ -471,6 +498,7 @@ function putBack(record) {
   moving.delete(record);
   if (reading === record) reading = null;
   stage.view.zoomBy(VIEW_HOME_ZOOM / stage.view.aim.zoom);
+  stage.view.aim.yaw = nearestYaw(stage.view.aim.yaw, VIEW_HOME_YAW);
   focusOn(SHELF_TARGET);
   say(snapshotNotice);
 }
