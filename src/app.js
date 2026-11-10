@@ -16,6 +16,7 @@ import { createBookcase, stockBooks } from '../vendor/madness-engine/src/props/b
 import { createBook } from '../vendor/madness-engine/src/props/book.js';
 import { createWoodTable } from '../vendor/madness-engine/src/props/wood-table.js';
 import { createWoodChair } from '../vendor/madness-engine/src/props/wood-chair.js';
+import { createPersianRug } from './rug.js';
 import { CATALOG, KINDS, keyOf } from './catalog.js';
 import { SOURCES } from './sources.js';
 import { loadOrFallback, MAX_PAGES, pageCountForBook } from './library.js';
@@ -84,14 +85,9 @@ wall.position.set(0, 2.1, -0.28);
 wall.receiveShadow = true;
 scene.add(wall);
 
-const rug = new GFX.Mesh(
-  new GFX.CircleGeometry(2.0, 48),
-  new GFX.MeshStandardMaterial({ color: '#6b2f35', roughness: 1, metalness: 0 }),
-);
-rug.rotation.x = -Math.PI / 2;
-rug.position.set(0, 0.004, 2.2);
-rug.receiveShadow = true;
-scene.add(rug);
+const rug = createPersianRug(GFX, { width: 3.8, depth: 3.15 });
+rug.group.position.set(0, 0, 2.2);
+scene.add(rug.group);
 
 /** Sets a piece of furniture down on the floor, turned about the vertical (0 faces +z, toward the viewer). */
 function furnish(piece, x, z, turn = 0) {
