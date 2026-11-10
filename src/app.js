@@ -183,27 +183,15 @@ const BOOK_BASE_HEIGHT = 0.42;
 const BOOK_LEAF_PITCH = 0.0006;
 
 const SECTION_CATALOGS = {
-  history: [
-    'Ancient Greece', 'Ancient Rome', 'Ancient Egypt', 'Mesopotamia', 'Persian Empire', 'Maya civilization',
-    'Middle Ages', 'Renaissance', 'Industrial Revolution', 'French Revolution', 'World War I', 'World War II',
-    'Cold War', 'Julius Caesar', 'Cleopatra', 'Genghis Khan', 'Napoleon', 'Abraham Lincoln', 'Nelson Mandela',
-  ],
+  history: ["Ancient Greece","Ancient Rome","Ancient Egypt","Mesopotamia","Persian Empire","Maya civilization","Middle Ages","Renaissance","Industrial Revolution","French Revolution","World War I","World War II","Cold War","Julius Caesar","Cleopatra","Genghis Khan","Napoleon","Abraham Lincoln","Nelson Mandela"],
   science: [
     ...CATALOG.map((entry) => entry.title),
     'Physics', 'Quantum mechanics', 'Theory of relativity', 'Black hole', 'Cosmology', 'Solar System',
     'James Webb Space Telescope', 'Evolution', 'DNA', 'Genetics', 'Cell biology', 'Human brain', 'Ecology',
     'Microbiology', 'Periodic table', 'Chemical reaction', 'Plate tectonics', 'Climate change', 'Geology', 'Oceanography',
   ],
-  entertainment: [
-    'Cinema of the United States', 'Film', 'Television', 'Animation', 'Science fiction', 'Fantasy',
-    'Video game', 'Role-playing game', 'Rock music', 'Jazz', 'Electronic music', 'Classical music',
-    'Theatre', 'Musical theatre', 'Comic book', 'Manga', 'Photography', 'Architecture',
-  ],
-  philosophy: [
-    'Philosophy', 'Ethics', 'Logic', 'Metaphysics', 'Epistemology', 'Existentialism', 'Stoicism',
-    'Democracy', 'Capitalism', 'Socialism', 'Freedom of speech', 'Human rights', 'Censorship', 'Propaganda',
-    'Consciousness', 'Free will', 'Language', 'Mythology', 'Aesthetics', 'Psychology',
-  ],
+  entertainment: ["Cinema of the United States","Film","Television","Animation","Science fiction","Fantasy","Video game","Role-playing game","Rock music","Jazz","Electronic music","Classical music","Theatre","Musical theatre","Comic book","Manga","Photography","Architecture"],
+  philosophy: ["Philosophy","Ethics","Logic","Metaphysics","Epistemology","Existentialism","Stoicism","Democracy","Capitalism","Socialism","Freedom of speech","Human rights","Censorship","Propaganda","Consciousness","Free will","Language","Mythology","Aesthetics","Psychology"],
 };
 const sectionCatalog = (sectionId) => SECTION_CATALOGS[sectionId].map((title) => ({
   title,
@@ -281,7 +269,7 @@ function takeDown(record) {
   book.group.scale.setScalar(1);
   reading = record;
   moving.add(record);
-  focusOn(readAt(record.source.id));
+  focusOn(readAt(record));
 }
 
 function putBack(record) {
