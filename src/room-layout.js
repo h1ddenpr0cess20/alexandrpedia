@@ -72,9 +72,10 @@ export const SEATED_KNEE_CLEARANCE = 0.6;
 export const CORNER_CHAIR_DISTANCE = 0.52 + SEATED_KNEE_CLEARANCE;
 /**
  * Seat and table heights, in metres, sized to the human model (people/human): with his feet on the
- * floor, a seated reader's buttocks rest at about 0.50 m. A desk stands about 0.27 m above the seat.
+ * floor, a seated reader's buttocks rest between 0.45 m (her) and 0.50 m (his). The engine's chairs use
+ * this seat height by default. A desk stands about 0.30 m above the seat.
  */
-export const SEAT_HEIGHT = 0.5;
+export const SEAT_HEIGHT = 0.47;
 export const TABLE_HEIGHT = 0.77;
 export const CENTER_CHAIR_DIMENSIONS = Object.freeze({ depth: 0.44 });
 /** The two chairs sit this far either side of the middle of a long table's outer side. */

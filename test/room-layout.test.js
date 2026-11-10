@@ -200,7 +200,7 @@ test('a book lies with its head away from the reader and the camera stands on th
 });
 
 test('seats and tables are sized for a seated reader: the desk stands about 0.27 m above the seat', () => {
-  assert.ok(SEAT_HEIGHT >= 0.48 && SEAT_HEIGHT <= 0.52, 'seat height matches the measured buttock height');
+  assert.ok(SEAT_HEIGHT >= 0.45 && SEAT_HEIGHT <= 0.5, 'seat height sits between the measured buttock heights');
   const clearance = TABLE_HEIGHT - SEAT_HEIGHT;
-  assert.ok(clearance >= 0.25 && clearance <= 0.3, `desk clearance ${clearance.toFixed(2)} m`);
+  assert.ok(clearance >= 0.25 && clearance <= 0.31, `desk clearance ${clearance.toFixed(2)} m`);
 });
