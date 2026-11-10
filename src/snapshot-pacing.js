@@ -7,8 +7,8 @@
 export function parseRetryAfter(value, now = Date.now()) {
   if (value == null || String(value).trim() === '') return 0;
   const raw = String(value).trim();
-  const seconds = Number(raw);
-  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+  if (/^\\d+(?:\\.\\d+)?$/.test(raw)) return Number(raw) * 1000;
+  if (/^-\\d+(?:\\.\\d+)?$/.test(raw)) return 0;
   const timestamp = Date.parse(raw);
   return Number.isFinite(timestamp) ? Math.max(0, timestamp - now) : 0;
 }
