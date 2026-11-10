@@ -567,12 +567,8 @@ function createReader(seat, record) {
   man.customize(look);
   man.setShirtColor(choose(READER_SHIRTS));
 
-  // A book made as the asset viewer makes one to hold (size 0.45, 60 pages), so the hands grip it as they do there.
-  // It carries the chosen title.
-  const copy = createBook(GFX, {
-    size: 0.45, pageCount: 60,
-    title: record.article.title, subtitle: record.bookOptions.subtitle,
-  });
+  // The engine's own Book of Madness, made as the asset viewer makes it to hold, so the hands grip it as they do there.
+  const copy = createBook(GFX, { size: 0.45, pageCount: 60 });
   holdCopy(man, copy, false);
   man.group.name = `${sex} reader`;
   scene.add(man.group);
