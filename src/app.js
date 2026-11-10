@@ -23,6 +23,7 @@ import { loadArticle, MAX_PAGES, pageCountForBook } from './library.js';
 import { flowPages } from '../vendor/madness-engine/src/props/book-art.js';
 import { shelveBooksByPriority } from './shelving.js';
 import { catalogsForSections, SECTION_NAMES } from './sections.js';
+import { ORIGINAL_BOOKCASE_DIMENSIONS, wallCasePlacement } from './room-layout.js';
 
 // Wikipedia and Grokipedia retain their oak and mahogany identities. Subject nooks have
 // complementary woods, while the AI centerpiece uses walnut as a neutral focal point.
@@ -49,10 +50,14 @@ function pointInBay(bay, x, z, y = 0) {
 }
 
 function readAt(record) {
-  const bay = record.sectionId === 'ai' ? AI_BAY : WALL_BAYS[record.sectionId];
-  const towardCenter = record.source.id === 'wikipedia' ? 1 : -1;
-  const lateral = record.sectionId === 'ai' ? 0 : -1.65;
-  return pointInBay(bay, lateral, towardCenter * 1.18, DESK_HEIGHT + 0.42);
+  const sourceIndex = SOURCES_IN_ORDER.indexOf(record.source.id);
+  const towardCenter = sourceIndex === 0 ? 1 : -1;
+  if (record.sectionId === 'ai') {
+    return pointInBay(AI_BAY, 0, towardCenter * 2.1, DESK_HEIGHT + 0.42);
+  }
+  const bay = WALL_BAYS[record.sectionId];
+  const localX = sourceIndex === 0 ? -0.43 : 0.43;
+  return pointInBay(bay, localX, -1.55, DESK_HEIGHT + 0.42);
 }
 const READ_UPRIGHT = new GFX.Quaternion().setFromAxisAngle(new GFX.Vector3(1, 0, 0), Math.PI / 2);
 
@@ -132,9 +137,9 @@ scene.add(centerRug.group);
 for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
   // The outer reading bays each get a matching rug. The central AI rug remains separate,
   // with a clear band of floor between the two so their fringes never overlap.
-  const rug = createPersianRug(GFX, { width: 2.1, depth: 2.2, fringeLength: 0.04 });
+  const rug = createPersianRug(GFX, { width: 2.65, depth: 2.8, fringeLength: 0.04 });
   rug.group.name = `${sectionId} reading rug`;
-  rug.group.position.copy(pointInBay(bay, -1.65, -1.85, 0.001));
+  rug.group.position.copy(pointInBay(bay, 0, -0.95, 0.001));
   rug.group.rotation.y = bay.turn;
   scene.add(rug.group);
 }
@@ -149,46 +154,52 @@ function furnish(piece, x, z, turn = 0) {
 
 const cases = {};
 
-/**
- * Two matching cases share their back panels at the center plane. Wikipedia faces
- * toward the room center; Grokipedia faces the opposite direction.
- */
+function createCase(sectionId, sourceId, position, rotationY) {
+  const shelf = createBookcase(GFX, {
+    species: SPECIES[sourceId],
+    shelves: 4,
+    ...ORIGINAL_BOOKCASE_DIMENSIONS,
+    seed: sectionId.length * 31 + (sourceId === 'wikipedia' ? 3 : 7),
+  });
+  shelf.group.position.set(position.x, 0, position.z);
+  shelf.group.rotation.y = rotationY;
+  scene.add(shelf.group);
+  cases[`${sectionId}:${sourceId}`] = shelf;
+  return shelf;
+}
+
+/** The center AI cases alone share a back plane and face in opposite directions. */
 function addBackToBackCases(sectionId, bay) {
-  // Original Alexandrpedia bookcase dimensions; the new layout changes placement only.
-  const width = 0.8;
-  const depth = 0.34;
+  const depth = ORIGINAL_BOOKCASE_DIMENSIONS.depth;
   const inward = new GFX.Vector3(0, 0, 1).applyAxisAngle(AXIS_Y, bay.turn);
   for (const sourceId of SOURCES_IN_ORDER) {
     const sign = sourceId === 'wikipedia' ? 1 : -1;
-    const shelf = createBookcase(GFX, {
-      species: SPECIES[sourceId],
-      shelves: 4,
-      width,
-      depth,
-      height: 2.2,
-      seed: sectionId.length * 31 + (sourceId === 'wikipedia' ? 3 : 7),
-    });
-    shelf.group.position.set(
-      bay.x + inward.x * sign * depth / 2,
-      0,
-      bay.z + inward.z * sign * depth / 2,
-    );
-    shelf.group.rotation.y = bay.turn + (sign < 0 ? Math.PI : 0);
-    scene.add(shelf.group);
-    cases[`${sectionId}:${sourceId}`] = shelf;
+    const position = {
+      x: bay.x + inward.x * sign * depth / 2,
+      z: bay.z + inward.z * sign * depth / 2,
+    };
+    createCase(sectionId, sourceId, position, bay.turn + (sign < 0 ? Math.PI : 0));
+  }
+}
+
+/** Wall cases sit shoulder-to-shoulder, flush against the wall, and both face the room. */
+function addSideBySideWallCases(sectionId, bay) {
+  for (const [sourceIndex, sourceId] of SOURCES_IN_ORDER.entries()) {
+    const placement = wallCasePlacement({ roomHalf: ROOM_HALF, bay, sourceIndex });
+    createCase(sectionId, sourceId, placement, placement.rotationY);
   }
 }
 
 addBackToBackCases('ai', AI_BAY);
 for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
-  addBackToBackCases(sectionId, bay);
+  addSideBySideWallCases(sectionId, bay);
 }
 
-/** A framed two-sided brass title plaque, painted once and shown legibly from either side. */
-function createSectionSignFace(sectionId, collectionLabel, width) {
+/** Paint a plaque face with the source name above its subject collection. */
+function createSectionSignFace(sectionId, collectionLabel, compact = false) {
   const canvas = document.createElement('canvas');
-  canvas.width = 1024;
-  canvas.height = 256;
+  canvas.width = compact ? 720 : 1024;
+  canvas.height = compact ? 520 : 256;
   const context = canvas.getContext('2d');
   if (!context) return null;
   context.fillStyle = '#32251f';
@@ -201,11 +212,11 @@ function createSectionSignFace(sectionId, collectionLabel, width) {
   context.textAlign = 'center';
   context.textBaseline = 'middle';
   context.fillStyle = '#c4a66a';
-  context.font = 'bold 30px Georgia, serif';
-  context.fillText(collectionLabel, canvas.width / 2, 76);
+  context.font = compact ? 'bold 27px Georgia, serif' : 'bold 30px Georgia, serif';
+  context.fillText(collectionLabel, canvas.width / 2, compact ? 156 : 76);
   context.fillStyle = '#f1e6d1';
-  context.font = 'bold 72px Georgia, serif';
-  context.fillText(SECTION_NAMES[sectionId].toUpperCase(), canvas.width / 2, 162, canvas.width - 100);
+  context.font = compact ? 'bold 40px Georgia, serif' : 'bold 72px Georgia, serif';
+  context.fillText(SECTION_NAMES[sectionId].toUpperCase(), canvas.width / 2, compact ? 354 : 162, canvas.width - 100);
 
   const texture = new GFX.CanvasTexture(canvas);
   texture.colorSpace = GFX.SRGBColorSpace;
@@ -213,29 +224,57 @@ function createSectionSignFace(sectionId, collectionLabel, width) {
   return new GFX.MeshStandardMaterial({ map: texture, roughness: 0.82, metalness: 0 });
 }
 
-/** A framed two-sided brass plaque, with the source named on the side that faces each aisle. */
-function addSectionSign(sectionId, bay, width, y = 2.72) {
-  const wikipediaFace = createSectionSignFace(sectionId, 'WIKIPEDIA COLLECTION', width);
-  const grokipediaFace = createSectionSignFace(sectionId, 'GROKIPEDIA COLLECTION', width);
-  const woodColor = { ai: '#5b3d2b', history: '#6b3c2c', science: '#9a7445', entertainment: '#67452e', philosophy: '#554034' }[sectionId];
+function addPlaqueFrame(group, width, woodColor) {
   const frame = new GFX.MeshStandardMaterial({ color: woodColor, roughness: 0.72, metalness: 0 });
-  const group = new GFX.Group();
-  group.name = `${SECTION_NAMES[sectionId]} two-sided collection plaque`;
-  group.position.set(bay.x, y, bay.z);
-  group.rotation.y = bay.turn;
   group.add(new GFX.Mesh(new GFX.BoxGeometry(width + 0.14, 0.58, 0.08), frame));
-  if (wikipediaFace) {
-    const front = new GFX.Mesh(new GFX.PlaneGeometry(width, 0.44), wikipediaFace);
-    front.position.z = 0.043;
-    group.add(front);
+}
+
+/** The center AI plaque is double-sided because its two shelves face opposite aisles. */
+function addSectionSign(sectionId, bay, width, y = 2.72) {
+  const group = new GFX.Group();
+  group.name = `${SECTION_NAMES[sectionId]} collection plaque`;
+  group.rotation.y = bay.turn;
+
+  if (sectionId === 'ai') {
+    group.position.set(bay.x, y, bay.z);
+    addPlaqueFrame(group, width, '#5b3d2b');
+    const wikipediaFace = createSectionSignFace(sectionId, 'WIKIPEDIA COLLECTION');
+    const grokipediaFace = createSectionSignFace(sectionId, 'GROKIPEDIA COLLECTION');
+    if (wikipediaFace) {
+      const front = new GFX.Mesh(new GFX.PlaneGeometry(width, 0.44), wikipediaFace);
+      front.position.z = 0.043;
+      group.add(front);
+    }
+    if (grokipediaFace) {
+      const reverse = new GFX.Mesh(new GFX.PlaneGeometry(width, 0.44), grokipediaFace);
+      reverse.position.z = -0.043;
+      reverse.rotation.y = Math.PI;
+      group.add(reverse);
+    }
+    scene.add(group);
+    return;
   }
-  if (grokipediaFace) {
-    const reverse = new GFX.Mesh(new GFX.PlaneGeometry(width, 0.44), grokipediaFace);
-    reverse.position.z = -0.043;
-    reverse.rotation.y = Math.PI;
-    group.add(reverse);
+
+  // The wall cases are side-by-side, so each gets its own plaque on the same inward-facing plane.
+  for (const [sourceIndex, sourceId] of SOURCES_IN_ORDER.entries()) {
+    const placement = wallCasePlacement({ roomHalf: ROOM_HALF, bay, sourceIndex });
+    const plaque = new GFX.Group();
+    plaque.name = `${SECTION_NAMES[sectionId]} ${sourceId} collection plaque`;
+    plaque.position.set(placement.x, y, placement.z);
+    plaque.rotation.y = bay.turn;
+    addPlaqueFrame(plaque, ORIGINAL_BOOKCASE_DIMENSIONS.width, sourceId === 'wikipedia' ? '#765237' : '#50352a');
+    const face = createSectionSignFace(
+      sectionId,
+      sourceId === 'wikipedia' ? 'WIKIPEDIA COLLECTION' : 'GROKIPEDIA COLLECTION',
+      true,
+    );
+    if (face) {
+      const front = new GFX.Mesh(new GFX.PlaneGeometry(ORIGINAL_BOOKCASE_DIMENSIONS.width, 0.44), face);
+      front.position.z = 0.043;
+      plaque.add(front);
+    }
+    scene.add(plaque);
   }
-  scene.add(group);
 }
 
 addSectionSign('ai', AI_BAY, 2.05, 2.82);
@@ -243,43 +282,43 @@ for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
   addSectionSign(sectionId, bay, 1.45, 2.55);
 }
 
-// AI reading desks sit on opposite sides of the central island.
+// The AI centerpiece has a clear aisle between the shelving and two reading desks.
 for (const sourceId of SOURCES_IN_ORDER) {
   const sign = sourceId === 'wikipedia' ? 1 : -1;
   const wood = { species: SPECIES[sourceId], finish: 'lacquered' };
   furnish(
     createWoodTable(GFX, { ...wood, kind: 'desk', width: 1.3, depth: 0.68, height: DESK_HEIGHT }),
-    0, sign * 1.2, sign > 0 ? 0 : Math.PI,
+    0, sign * 2.1, sign > 0 ? 0 : Math.PI,
   );
   furnish(
     createWoodChair(GFX, { ...wood, kind: 'armchair' }),
-    0, sign * 2.1, sign > 0 ? Math.PI : 0,
+    0, sign * 3.2, sign > 0 ? Math.PI : 0,
   );
   furnish(
     createWoodTable(GFX, { ...wood, kind: 'side' }),
-    sign * 0.95, sign * 1.4, 0,
+    sign > 0 ? -1.25 : 1.25, sign * 2.2, 0,
   );
 }
 
-// Each wall section has a compact desk, armchair and side table beside its two-sided shelf.
+// Each wall has two compact, matching desks aligned with its side-by-side bookcases.
 for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
-  for (const sourceId of SOURCES_IN_ORDER) {
+  for (const [sourceIndex, sourceId] of SOURCES_IN_ORDER.entries()) {
     const wood = { species: SPECIES[sourceId], finish: 'lacquered' };
-    const sign = sourceId === 'wikipedia' ? 1 : -1;
-    const desk = pointInBay(bay, -1.65, sign * 1.18);
-    const chair = pointInBay(bay, -1.65, sign * 2.12);
-    const side = pointInBay(bay, -2.45, sign * 1.28);
+    const localX = sourceIndex === 0 ? -0.43 : 0.43;
+    const desk = pointInBay(bay, localX, -1.55);
+    const chair = pointInBay(bay, localX, -0.4);
+    const sideTable = pointInBay(bay, sourceIndex === 0 ? -1.12 : 1.12, -0.45);
     furnish(
-      createWoodTable(GFX, { ...wood, kind: 'desk', width: 1.35, depth: 0.68, height: DESK_HEIGHT }),
-      desk.x, desk.z, bay.turn + (sign < 0 ? Math.PI : 0),
+      createWoodTable(GFX, { ...wood, kind: 'desk', width: 0.78, depth: 0.62, height: DESK_HEIGHT }),
+      desk.x, desk.z, bay.turn,
     );
     furnish(
       createWoodChair(GFX, { ...wood, kind: 'armchair' }),
-      chair.x, chair.z, bay.turn + (sign > 0 ? Math.PI : 0),
+      chair.x, chair.z, bay.turn + Math.PI,
     );
     furnish(
       createWoodTable(GFX, { ...wood, kind: 'side' }),
-      side.x, side.z, bay.turn,
+      sideTable.x, sideTable.z, bay.turn,
     );
   }
 }
