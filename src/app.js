@@ -14,6 +14,7 @@ import { paintRoom } from '../vendor/madness-engine/src/textures/rooms/studio.js
 import { defineView } from '../vendor/madness-engine/src/view.js';
 import { createBookcase, stockBooks } from '../vendor/madness-engine/src/props/bookcase.js';
 import { createBook } from '../vendor/madness-engine/src/props/book.js';
+import { createHuman, FIGURES } from '../vendor/madness-engine/src/people/index.js';
 import { createWoodTable } from '../vendor/madness-engine/src/props/wood-table.js';
 import { createWoodChair } from '../vendor/madness-engine/src/props/wood-chair.js';
 import { createPersianRug } from './rug.js';
@@ -81,7 +82,8 @@ function nearestYaw(current, target) {
 // A view that can go from nearly level to nearly overhead, and in close or far out.
 const VIEW_HOME_YAW = Math.PI / 4;
 const VIEW_HOME_ZOOM = 2.0;
-const BOOK_VIEW_ZOOM = 0.68;
+// The book is at shelf scale (0.57) on the table, so the camera stands closer than it did for a full-size book.
+const BOOK_VIEW_ZOOM = 0.4;
 const { createView } = defineView({
   home: { yaw: VIEW_HOME_YAW, pitch: 0.48, zoom: VIEW_HOME_ZOOM },
   limits: { pitch: [0.08, 1.35], zoom: [0.35, 2.4] },
@@ -479,6 +481,50 @@ if (missingSnapshots.length) {
 }
 
 
+// ———————————————————————————————————————————— people reading in the corners
+
+const READER_SHIRTS = ['#5b6b7a', '#7a4e3a', '#3f5e4c', '#8a6d3b'];
+const choose = (list) => list[Math.floor(Math.random() * list.length)];
+
+/**
+ * Seats a reader on a corner chair with a copy of a shelf book open in both hands. The figure is lowered
+ * until the soles meet the floor, as they do standing; the chair's seat is sized to the figure (room-layout.js).
+ */
+function seatReader(sex, spot, record) {
+  const man = createHuman(GFX, { sex });
+  if (sex === 'male') man.customize({ hair: choose(['sidePart', 'none']) });
+  man.setShirtColor(choose(READER_SHIRTS));
+
+  const joint = FIGURES[sex].joints.ball;
+  man.pose({ clip: 'idle', t: 0, time: 0 });
+  const standingSole = man.point('footL', joint)[1];
+  man.pose({ clip: 'read', t: 1, time: 0 });
+  const seatedSole = man.point('footL', joint)[1];
+
+  // A copy of the shelf book at shelf scale: the same book as on the shelf, just not the one on it.
+  const copy = createBook(GFX, { ...record.bookOptions, size: BOOK_SCALE });
+  man.hold(copy, { how: 'book' });
+  man.pose({ clip: 'read', t: 1, time: 0 });
+
+  man.group.name = `${sex} reader`;
+  man.group.position.set(spot.x, standingSole - seatedSole, spot.z);
+  man.group.rotation.y = spot.rotationY;
+  scene.add(man.group);
+}
+
+// Two readers, a man and a woman, each in a random corner on a random chair, with a title picked at random.
+{
+  const titles = [...books.values()];
+  if (titles.length) {
+    const corners = [...CORNER_NOOKS].sort(() => Math.random() - 0.5).slice(0, 2);
+    for (const [index, sex] of ['male', 'female'].entries()) {
+      const corner = corners[index];
+      const nook = cornerReadingNookPlacement({ roomHalf: ROOM_HALF, cornerX: corner.cornerX, cornerZ: corner.cornerZ });
+      seatReader(sex, choose(nook.chairs), choose(titles));
+    }
+  }
+}
+
 // ———————————————————————————————————————————— taking a book down and putting it back
 
 // What the camera looks at: eased toward `focus` plus whatever the viewer has panned.
@@ -497,7 +543,7 @@ function takeDown(record) {
   book.group.position.copy(place.position);
   // Lying flat on the table, head away from the reader.
   book.group.quaternion.setFromAxisAngle(AXIS_Y, place.bookYaw);
-  book.group.scale.setScalar(1);
+  book.group.scale.setScalar(BOOK_SCALE);
   reading = record;
   moving.add(record);
   stage.view.zoomBy(BOOK_VIEW_ZOOM / stage.view.aim.zoom);
