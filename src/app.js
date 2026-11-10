@@ -24,7 +24,7 @@ import { loadArticle, MAX_PAGES, pageCountForBook } from './library.js';
 import { flowPages } from '../vendor/madness-engine/src/props/book-art.js';
 import { shelveBooksByPriority } from './shelving.js';
 import { catalogsForSections, SECTION_NAMES } from './sections.js';
-import { CENTER_LONG_TABLE_DIMENSIONS, CORNER_READING_TABLE_DIMENSIONS, ORIGINAL_BOOKCASE_DIMENSIONS, WALL_SIGN_FRAME_EXTRA, centerLongTableChairs, centerLongTablePlacement, cornerReadingNookPlacement, readingOrientation, TABLE_HEIGHT, wallCasePlacement, wallReadingNookPlacement } from './room-layout.js';
+import { CENTER_LONG_TABLE_DIMENSIONS, CORNER_READING_TABLE_DIMENSIONS, ORIGINAL_BOOKCASE_DIMENSIONS, WALL_SIGN_FRAME_EXTRA, centerLongTableChairs, centerLongTablePlacement, cornerReadingNookPlacement, TABLE_HEIGHT, wallCasePlacement, wallReadingNookPlacement } from './room-layout.js';
 
 // Wikipedia and Grokipedia retain their oak and mahogany identities. Subject nooks have
 // complementary woods, while the AI centerpiece uses walnut as a neutral focal point.
@@ -50,39 +50,27 @@ function pointInBay(bay, x, z, y = 0) {
     .add(new GFX.Vector3(bay.x, 0, bay.z));
 }
 
-/**
- * Where a book lies when it is taken down: the spot on its table, the yaw its head points to
- * (away from its reader, so the text reads upright from the seat) and the yaw the camera takes.
- */
+/** Where a book stands when it is taken down: above its table, at reading height. */
 function readingPlace(record) {
   const sourceIndex = SOURCES_IN_ORDER.indexOf(record.source.id);
-  // Lying flat: its boards rest on the table top, just above it.
   const bookHeight = DESK_HEIGHT + 0.42;
   if (record.sectionId === 'ai') {
     const side = sourceIndex === 0 ? 'left' : 'right';
     const placement = centerLongTablePlacement({ side });
-    const { seat } = centerLongTableChairs({ side });
-    const position = pointInBay(AI_BAY, placement.x, placement.z, bookHeight);
-    return { position, ...readingOrientation({ table: placement, seat }) };
+    return { position: pointInBay(AI_BAY, placement.x, placement.z, bookHeight) };
   }
   const nook = wallReadingNookPlacement({
     roomHalf: ROOM_HALF,
     sectionId: record.sectionId,
     sourceIndex,
   });
-  const position = new GFX.Vector3(nook.table.x, bookHeight, nook.table.z);
-  return { position, ...readingOrientation({ table: nook.table, seat: nook.chair }) };
-}
-
-/** The yaw equal to `target` that is nearest `current`, so the view turns the short way round. */
-function nearestYaw(current, target) {
-  return target + Math.round((current - target) / (Math.PI * 2)) * Math.PI * 2;
+  return { position: new GFX.Vector3(nook.table.x, bookHeight, nook.table.z) };
 }
 
 // A view that can go from nearly level to nearly overhead, and in close or far out.
 const VIEW_HOME_YAW = Math.PI / 4;
+const READ_UPRIGHT = new GFX.Quaternion().setFromAxisAngle(new GFX.Vector3(1, 0, 0), Math.PI / 2);
 const VIEW_HOME_ZOOM = 2.0;
-const BOOK_VIEW_ZOOM = 0.68;
 const { createView, groundAxes } = defineView({
   home: { yaw: VIEW_HOME_YAW, pitch: 0.48, zoom: VIEW_HOME_ZOOM },
   limits: { pitch: [0.08, 1.35], zoom: [0.35, 2.4] },
@@ -673,14 +661,10 @@ function takeDown(record) {
   home.parent.remove(book.group);
   scene.add(book.group);
   book.group.position.copy(place.position);
-  // Lying flat above the table, facing the reader.
-  book.group.quaternion.setFromAxisAngle(AXIS_Y, place.bookYaw);
+  book.group.quaternion.copy(READ_UPRIGHT);
   book.group.scale.setScalar(1);
   reading = record;
   moving.add(record);
-  stage.view.zoomBy(BOOK_VIEW_ZOOM / stage.view.aim.zoom);
-  // The camera moves to the reader's side of the table, so the page is seen the right way up.
-  stage.view.aim.yaw = nearestYaw(stage.view.aim.yaw, place.cameraYaw);
   focusOn(place.position);
 }
 
@@ -694,8 +678,6 @@ function putBack(record) {
   book.group.scale.copy(home.scale);
   moving.delete(record);
   if (reading === record) reading = null;
-  stage.view.zoomBy(VIEW_HOME_ZOOM / stage.view.aim.zoom);
-  stage.view.aim.yaw = nearestYaw(stage.view.aim.yaw, VIEW_HOME_YAW);
   focusOn(SHELF_TARGET);
   say(snapshotNotice);
 }
