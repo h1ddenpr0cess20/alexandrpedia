@@ -57,7 +57,7 @@ function pointInBay(bay, x, z, y = 0) {
 function readingPlace(record) {
   const sourceIndex = SOURCES_IN_ORDER.indexOf(record.source.id);
   // Lying flat: its boards rest on the table top, just above it.
-  const bookHeight = DESK_HEIGHT + 0.004;
+  const bookHeight = DESK_HEIGHT + 0.42;
   if (record.sectionId === 'ai') {
     const side = sourceIndex === 0 ? 'left' : 'right';
     const placement = centerLongTablePlacement({ side });
@@ -82,8 +82,7 @@ function nearestYaw(current, target) {
 // A view that can go from nearly level to nearly overhead, and in close or far out.
 const VIEW_HOME_YAW = Math.PI / 4;
 const VIEW_HOME_ZOOM = 2.0;
-// The book is at shelf scale (0.57) on the table, so the camera stands closer than it did for a full-size book.
-const BOOK_VIEW_ZOOM = 0.4;
+const BOOK_VIEW_ZOOM = 0.68;
 const { createView, groundAxes } = defineView({
   home: { yaw: VIEW_HOME_YAW, pitch: 0.48, zoom: VIEW_HOME_ZOOM },
   limits: { pitch: [0.08, 1.35], zoom: [0.35, 2.4] },
@@ -672,9 +671,9 @@ function takeDown(record) {
   home.parent.remove(book.group);
   scene.add(book.group);
   book.group.position.copy(place.position);
-  // Lying flat on the table, head away from the reader.
+  // Lying flat above the table, facing the reader.
   book.group.quaternion.setFromAxisAngle(AXIS_Y, place.bookYaw);
-  book.group.scale.setScalar(BOOK_SCALE);
+  book.group.scale.setScalar(1);
   reading = record;
   moving.add(record);
   stage.view.zoomBy(BOOK_VIEW_ZOOM / stage.view.aim.zoom);

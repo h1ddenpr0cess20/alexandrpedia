@@ -167,15 +167,15 @@ export function cornerReadingNookPlacement({
 }
 
 /**
- * Which way a book on a table should lie, and where the camera should stand to read it. The
- * book's head (its +z) points away from the reader's seat, so its text reads upright from there.
+ * Which way a book on a table should lie, and where the camera should stand to read it. As in the
+ * engine's hand-held book, the book's +z points toward the reader, so the first page is on the reader's left.
  * Both are yaw angles: the book's about +y, the camera's measured from +z as `view` uses it.
  */
 export function readingOrientation({ table, seat }) {
-  const away = { x: table.x - seat.x, z: table.z - seat.z };
+  const toward = { x: seat.x - table.x, z: seat.z - table.z };
   return Object.freeze({
-    bookYaw: Math.atan2(away.x, away.z),
-    cameraYaw: Math.atan2(-away.x, -away.z),
+    bookYaw: Math.atan2(toward.x, toward.z),
+    cameraYaw: Math.atan2(toward.x, toward.z),
   });
 }
 

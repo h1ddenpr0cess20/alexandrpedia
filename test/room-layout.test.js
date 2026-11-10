@@ -189,8 +189,8 @@ test('a book lies with its head away from the reader and the camera stands on th
   const center = centerLongTablePlacement({ side: 'left' });
   const { seat } = centerLongTableChairs({ side: 'left' });
   const { bookYaw, cameraYaw } = readingOrientation({ table: center, seat });
-  // Head (+z) points toward the far side of the table, which is +x for the left table.
-  assert.ok(Math.abs(Math.sin(bookYaw) - 1) < 1e-9);
+  // +z points toward the reader, who sits on the outer side at -x (as the engine turns a book toward its reader).
+  assert.ok(Math.abs(Math.sin(bookYaw) + 1) < 1e-9);
   // The camera stands on the outer side, at -x, which is where the reader sits.
   assert.ok(Math.abs(Math.sin(cameraYaw) + 1) < 1e-9);
   const corner = cornerReadingNookPlacement({ roomHalf: ROOM_HALF, cornerX: -1, cornerZ: -1 });
