@@ -567,8 +567,12 @@ function createReader(seat, record) {
   man.customize(look);
   man.setShirtColor(choose(READER_SHIRTS));
 
-  // A copy of the shelf book at shelf scale: the same book as on the shelf, just not the one on it.
-  const copy = createBook(GFX, { ...record.bookOptions, size: BOOK_SCALE });
+  // A book made as the asset viewer makes one to hold (size 0.45, 60 pages), so the hands grip it as they do there.
+  // It carries the chosen title.
+  const copy = createBook(GFX, {
+    size: 0.45, pageCount: 60,
+    title: record.article.title, subtitle: record.bookOptions.subtitle,
+  });
   holdCopy(man, copy, false);
   man.group.name = `${sex} reader`;
   scene.add(man.group);
