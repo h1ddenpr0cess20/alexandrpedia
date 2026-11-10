@@ -26,10 +26,10 @@ import { catalogsForSections, SECTION_NAMES } from './sections.js';
 
 // Wikipedia and Grokipedia retain their oak and mahogany identities. Subject nooks have
 // complementary woods, while the AI centerpiece uses walnut as a neutral focal point.
-const SPECIES = {
-  wikipedia: 'oak', grokipedia: 'mahogany', ai: 'walnut',
-  history: 'cherry', science: 'maple', entertainment: 'teak', philosophy: 'walnut',
-};
+const SPECIES = Object.freeze({
+  wikipedia: 'oak',
+  grokipedia: 'mahogany',
+});
 const DESK_HEIGHT = 0.75;
 const SOURCES_IN_ORDER = ['wikipedia', 'grokipedia'];
 const AI_BAY = Object.freeze({ x: 0, z: 0, turn: 0, sources: SOURCES_IN_ORDER });
@@ -126,7 +126,7 @@ for (const spec of walls) {
 // Earth-toned woven rugs distinguish the central AI room and each subject's paired reading nooks.
 const centerRug = createPersianRug(GFX, { width: 4.8, depth: 4.8, fringeLength: 0.06 });
 centerRug.group.name = 'central AI Persian rug';
-centerRug.group.position.set(0, 0.008, 0);
+centerRug.group.position.set(0, 0.001, 0);
 scene.add(centerRug.group);
 
 for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
@@ -134,7 +134,7 @@ for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
   // with a clear band of floor between the two so their fringes never overlap.
   const rug = createPersianRug(GFX, { width: 2.1, depth: 2.2, fringeLength: 0.04 });
   rug.group.name = `${sectionId} reading rug`;
-  rug.group.position.copy(pointInBay(bay, -1.65, -1.85, 0.01));
+  rug.group.position.copy(pointInBay(bay, -1.65, -1.85, 0.001));
   rug.group.rotation.y = bay.turn;
   scene.add(rug.group);
 }
@@ -235,7 +235,7 @@ for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
 // AI reading desks sit on opposite sides of the central island.
 for (const sourceId of SOURCES_IN_ORDER) {
   const sign = sourceId === 'wikipedia' ? 1 : -1;
-  const wood = { species: SPECIES.ai, finish: 'lacquered' };
+  const wood = { species: SPECIES[sourceId], finish: 'lacquered' };
   furnish(
     createWoodTable(GFX, { ...wood, kind: 'desk', width: 1.3, depth: 0.68, height: DESK_HEIGHT }),
     0, sign * 1.2, sign > 0 ? 0 : Math.PI,
@@ -252,8 +252,8 @@ for (const sourceId of SOURCES_IN_ORDER) {
 
 // Each wall section has a compact desk, armchair and side table beside its two-sided shelf.
 for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
-  const wood = { species: SPECIES[sectionId], finish: 'lacquered' };
   for (const sourceId of SOURCES_IN_ORDER) {
+    const wood = { species: SPECIES[sourceId], finish: 'lacquered' };
     const sign = sourceId === 'wikipedia' ? 1 : -1;
     const desk = pointInBay(bay, -1.65, sign * 1.18);
     const chair = pointInBay(bay, -1.65, sign * 2.12);
