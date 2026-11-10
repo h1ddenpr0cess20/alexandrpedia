@@ -8,6 +8,7 @@ import {
   cornerReadingNookPlacement,
   wallReadingNookPlacement,
 } from '../src/room-layout.js';
+import { WALL_SIGN_FRAME_CLEARANCE, WALL_SIGN_FRAME_EXTRA } from '../src/room-layout.js';
 import {
   ORIGINAL_BOOKCASE_DIMENSIONS,
   WALL_BOOKCASE_GAP,
@@ -135,4 +136,10 @@ test('invalid furniture placement arguments are rejected', () => {
   assert.throws(() => centerLongTablePlacement({ side: 'north' }), /side/);
   assert.throws(() => cornerReadingNookPlacement({ roomHalf: ROOM_HALF, cornerX: 0, cornerZ: 1 }), /cornerX/);
   assert.throws(() => wallReadingNookPlacement({ roomHalf: ROOM_HALF, sectionId: 'unknown', sourceIndex: 0 }), /Unknown wall section/);
+});
+
+test('the two wall plaque frames have a visible gap and cannot overlap', () => {
+  assert.equal(WALL_SIGN_FRAME_EXTRA, 0.02);
+  assert.ok(WALL_SIGN_FRAME_CLEARANCE > 0);
+  assert.ok(Math.abs(WALL_SIGN_FRAME_CLEARANCE - 0.04) < 1e-9);
 });

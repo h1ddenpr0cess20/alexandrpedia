@@ -27,5 +27,8 @@ jobs:
           node --check scripts/check-titles.mjs
           node --check scripts/snapshot-wikipedia.mjs
           node --check scripts/snapshot-grokipedia.mjs
+          node --check src/article-update.js
+          node --check scripts/update-articles.mjs
+          node --check test/article-update.test.js
       - name: Run tests
         run: npm test

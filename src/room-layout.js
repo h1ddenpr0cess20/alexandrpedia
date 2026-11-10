@@ -154,3 +154,6 @@ export function wallReadingNookPlacement({ roomHalf, sectionId, sourceIndex }) {
   }
   return cornerReadingNookPlacement({ roomHalf, ...corners[sourceIndex] });
 }
+
+export const WALL_SIGN_FRAME_EXTRA = 0.02;
+export const WALL_SIGN_FRAME_CLEARANCE = WALL_BOOKCASE_GAP - WALL_SIGN_FRAME_EXTRA;

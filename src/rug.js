@@ -383,7 +383,8 @@ export function createPersianRug(GFX, options = {}) {
     const cord = new GFX.Mesh(shortCord, binding);
     cord.name = x < 0 ? 'left gold selvedge' : 'right gold selvedge';
     cord.position.set(x * (o.width / 2 - 0.006), cordY, 0);
-    cord.castShadow = true;
+    cord.castShadow = false;
+    cord.receiveShadow = false;
     group.add(cord);
   }
 

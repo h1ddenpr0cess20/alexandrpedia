@@ -23,7 +23,7 @@ import { loadArticle, MAX_PAGES, pageCountForBook } from './library.js';
 import { flowPages } from '../vendor/madness-engine/src/props/book-art.js';
 import { shelveBooksByPriority } from './shelving.js';
 import { catalogsForSections, SECTION_NAMES } from './sections.js';
-import { CENTER_LONG_TABLE_DIMENSIONS, CORNER_READING_TABLE_DIMENSIONS, ORIGINAL_BOOKCASE_DIMENSIONS, centerLongTablePlacement, cornerReadingNookPlacement, wallCasePlacement, wallReadingNookPlacement } from './room-layout.js';
+import { CENTER_LONG_TABLE_DIMENSIONS, CORNER_READING_TABLE_DIMENSIONS, ORIGINAL_BOOKCASE_DIMENSIONS, WALL_SIGN_FRAME_EXTRA, centerLongTablePlacement, cornerReadingNookPlacement, wallCasePlacement, wallReadingNookPlacement } from './room-layout.js';
 
 // Wikipedia and Grokipedia retain their oak and mahogany identities. Subject nooks have
 // complementary woods, while the AI centerpiece uses walnut as a neutral focal point.
@@ -263,16 +263,33 @@ function createMahoganyPlaqueMaterial() {
   });
   candidates.sort((a, b) => b.score - a.score);
   if (!candidates.length) throw new Error('The engine mahogany table did not expose a reusable wood material.');
-  const material = candidates[0].material.clone();
+  const textured = candidates.filter((candidate) => candidate.material.map);
+  const sourceMaterial = (textured[0] ?? candidates[0]).material;
+  const material = sourceMaterial.clone();
+  if (material.map?.clone) {
+    material.map = material.map.clone();
+    material.map.generateMipmaps = true;
+    material.map.minFilter = GFX.LinearMipmapLinearFilter;
+    material.map.magFilter = GFX.LinearFilter;
+    material.map.anisotropy = 4;
+    material.map.needsUpdate = true;
+  }
+  // Keep the engine's mahogany colour texture, but avoid additional fine-scale
+  // bump/normal relief on a small plaque where it can shimmer at an angle.
+  material.bumpMap = null;
+  material.normalMap = null;
+  material.displacementMap = null;
+  material.roughnessMap = null;
   material.roughness = 0.82;
   material.metalness = 0;
+  material.needsUpdate = true;
   return material;
 }
 const MAHOGANY_PLAQUE_MATERIAL = createMahoganyPlaqueMaterial();
 
 function addPlaqueFrame(group, width) {
   const frame = MAHOGANY_PLAQUE_MATERIAL.clone();
-  group.add(new GFX.Mesh(new GFX.BoxGeometry(width + 0.02, 0.58, 0.10), frame));
+  group.add(new GFX.Mesh(new GFX.BoxGeometry(width + WALL_SIGN_FRAME_EXTRA, 0.58, 0.10), frame));
 }
 
 /** The center AI plaque is double-sided because its two shelves face opposite aisles. */
@@ -316,7 +333,7 @@ function addSectionSign(sectionId, bay, width, y = 2.72) {
     );
     if (face) {
       const front = new GFX.Mesh(new GFX.PlaneGeometry(ORIGINAL_BOOKCASE_DIMENSIONS.width, 0.44), face);
-      front.position.z = 0.043;
+      front.position.z = 0.052;
       plaque.add(front);
     }
     scene.add(plaque);
