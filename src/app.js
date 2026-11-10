@@ -650,12 +650,6 @@ function turnOver() {
   setTimeout(turnOver, 15000 + Math.random() * 30000);
 }
 
-if (titles.length) {
-  arriveReader();
-  arriveReader();
-  setTimeout(turnOver, 15000 + Math.random() * 30000);
-}
-
 // ———————————————————————————————————————————— taking a book down and putting it back
 
 // What the camera looks at: eased toward `focus` plus whatever the viewer has panned.
@@ -902,3 +896,10 @@ renderer.setAnimationLoop((now) => {
   stage.render();
   if (!shown) { shown = true; loading.classList.add('done'); setTimeout(() => loading.remove(), 800); }
 });
+
+// The first two readers come in once the frame loop, and so `dirty`, is set up.
+if (titles.length) {
+  arriveReader();
+  arriveReader();
+  setTimeout(turnOver, 15000 + Math.random() * 30000);
+}
