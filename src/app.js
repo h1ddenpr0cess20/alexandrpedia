@@ -569,10 +569,7 @@ function createReader(seat, record) {
 
   // A copy of the shelf book at shelf scale: the same book as on the shelf, just not the one on it.
   const copy = createBook(GFX, { ...record.bookOptions, size: BOOK_SCALE });
-  // A reused figure lets go of the last reader's book before taking this one.
-  if (man.held('R')) man.release('R');
-  if (man.held('L')) man.release('L');
-  man.hold(copy, { how: 'book' });
+  holdCopy(man, copy, false);
   man.group.name = `${sex} reader`;
   scene.add(man.group);
   const reader = {
@@ -581,6 +578,13 @@ function createReader(seat, record) {
   };
   readers.set(seat.key, reader);
   return reader;
+}
+
+/** Puts a book in a figure's hands, shut while walking and open to read. Any book they held is let go first. */
+function holdCopy(man, copy, open) {
+  if (man.held('R')) man.release('R');
+  if (man.held('L')) man.release('L');
+  man.hold(copy, { how: 'book', open });
 }
 
 /** Walks a reader one step along the path for this frame; sits them down or removes them at the end. */
@@ -603,6 +607,7 @@ function walkReader(reader, now) {
     reader.phase = 'sit';
     group.position.set(reader.seat.x, lift, reader.seat.z);
     group.rotation.y = reader.seat.rotationY;
+    holdCopy(man, reader.copy, true);
     man.pose({ clip: 'read', t: 1, time: 0 });
     return false;
   }
@@ -635,6 +640,7 @@ function departReader() {
   const reader = choose(seated);
   reader.phase = 'out';
   reader.t0 = performance.now() / 1000;
+  holdCopy(reader.slot.man, reader.copy, false);
   reader.slot.man.pose({ clip: 'walk', t: 0, time: reader.t0, speed: 1 });
   reader.slot.man.group.position.set(reader.seat.x, 0, reader.seat.z);
   wake();
