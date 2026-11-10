@@ -20,7 +20,7 @@ for (const entry of entries) {
         throw new Error('snapshot has no readable article text');
       }
       counts[source.id].present++;
-      console.log(`ok   ${source.id.padEnd(12)} ${entry.title} (${article.text.split(/\\s+/).filter(Boolean).length} words)`);
+      console.log(`ok   ${source.id.padEnd(12)} ${entry.title} (${article.text.split(/\s+/).filter(Boolean).length} words)`);
     } catch (error) {
       const missing = error.code === 'ENOENT';
       counts[source.id][missing ? 'missing' : 'invalid']++;
@@ -29,12 +29,12 @@ for (const entry of entries) {
   }
 }
 
-console.log(`\\nChecked ${entries.length} unique titles against ${SOURCES.length} encyclopedias.`);
+console.log(`\nChecked ${entries.length} unique titles against ${SOURCES.length} encyclopedias.`);
 for (const [source, count] of Object.entries(counts)) {
   console.log(`${source}: ${count.present} present, ${count.missing} missing, ${count.invalid} invalid`);
 }
 if (problems.length) {
-  console.log(`\\n${problems.length} snapshot problem(s):`);
+  console.log(`\n${problems.length} snapshot problem(s):`);
   for (const problem of problems) console.log(`  - ${problem}`);
   process.exitCode = 1;
 } else {
