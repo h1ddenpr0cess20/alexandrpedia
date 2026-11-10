@@ -64,6 +64,12 @@ export const CENTER_LONG_TABLE_DIMENSIONS = Object.freeze({ width: 2.4, depth: 0
 export const CORNER_READING_TABLE_DIMENSIONS = Object.freeze({ width: 0.82, depth: 0.64 });
 export const CORNER_TABLE_SETBACK = 2.0;
 export const CORNER_CHAIR_DISTANCE = 1.0;
+/**
+ * Seat and table heights, in metres, sized to the human model (people/human): with his feet on the
+ * floor, a seated reader's buttocks rest at about 0.50 m. A desk stands about 0.27 m above the seat.
+ */
+export const SEAT_HEIGHT = 0.5;
+export const TABLE_HEIGHT = 0.77;
 export const CENTER_CHAIR_DIMENSIONS = Object.freeze({ depth: 0.44 });
 /** The two chairs sit this far either side of the middle of a long table's outer side. */
 export const CENTER_CHAIR_SPACING = 0.6;

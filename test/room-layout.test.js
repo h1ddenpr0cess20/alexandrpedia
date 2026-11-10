@@ -11,7 +11,7 @@ import {
   readingOrientation,
   wallReadingNookPlacement,
 } from '../src/room-layout.js';
-import { WALL_SIGN_FRAME_CLEARANCE, WALL_SIGN_FRAME_EXTRA } from '../src/room-layout.js';
+import { WALL_SIGN_FRAME_CLEARANCE, WALL_SIGN_FRAME_EXTRA, SEAT_HEIGHT, TABLE_HEIGHT } from '../src/room-layout.js';
 import {
   ORIGINAL_BOOKCASE_DIMENSIONS,
   WALL_BOOKCASE_GAP,
@@ -196,4 +196,10 @@ test('a book lies with its head away from the reader and the camera stands on th
   const cornerView = readingOrientation({ table: corner.table, seat: corner.chair });
   // Seated at the inward chair, the camera looks in from the corner's own diagonal.
   assert.ok(Math.abs(cornerView.cameraYaw - Math.PI / 4) < 1e-9);
+});
+
+test('seats and tables are sized for a seated reader: the desk stands about 0.27 m above the seat', () => {
+  assert.ok(SEAT_HEIGHT >= 0.48 && SEAT_HEIGHT <= 0.52, 'seat height matches the measured buttock height');
+  const clearance = TABLE_HEIGHT - SEAT_HEIGHT;
+  assert.ok(clearance >= 0.25 && clearance <= 0.3, `desk clearance ${clearance.toFixed(2)} m`);
 });

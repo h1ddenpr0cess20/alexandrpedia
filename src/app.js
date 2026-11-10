@@ -23,7 +23,7 @@ import { loadArticle, MAX_PAGES, pageCountForBook } from './library.js';
 import { flowPages } from '../vendor/madness-engine/src/props/book-art.js';
 import { shelveBooksByPriority } from './shelving.js';
 import { catalogsForSections, SECTION_NAMES } from './sections.js';
-import { CENTER_LONG_TABLE_DIMENSIONS, CORNER_READING_TABLE_DIMENSIONS, ORIGINAL_BOOKCASE_DIMENSIONS, WALL_SIGN_FRAME_EXTRA, centerLongTableChairs, centerLongTablePlacement, cornerReadingNookPlacement, readingOrientation, wallCasePlacement, wallReadingNookPlacement } from './room-layout.js';
+import { CENTER_LONG_TABLE_DIMENSIONS, CORNER_READING_TABLE_DIMENSIONS, ORIGINAL_BOOKCASE_DIMENSIONS, WALL_SIGN_FRAME_EXTRA, centerLongTableChairs, centerLongTablePlacement, cornerReadingNookPlacement, readingOrientation, SEAT_HEIGHT, TABLE_HEIGHT, wallCasePlacement, wallReadingNookPlacement } from './room-layout.js';
 
 // Wikipedia and Grokipedia retain their oak and mahogany identities. Subject nooks have
 // complementary woods, while the AI centerpiece uses walnut as a neutral focal point.
@@ -31,7 +31,7 @@ const SPECIES = Object.freeze({
   wikipedia: 'oak',
   grokipedia: 'mahogany',
 });
-const DESK_HEIGHT = 0.75;
+const DESK_HEIGHT = TABLE_HEIGHT;
 const SOURCES_IN_ORDER = ['wikipedia', 'grokipedia'];
 const AI_BAY = Object.freeze({ x: 0, z: 0, turn: 0, sources: SOURCES_IN_ORDER });
 const WALL_BAYS = Object.freeze({
@@ -352,7 +352,7 @@ for (const side of ['left', 'right']) {
 
   // Two chairs on the outer long side, so readers sit beside the book and the aisle to the shelves stays open.
   centerLongTableChairs({ side }).chairs.forEach((spot, index) => {
-    const chair = createWoodChair(GFX, { ...wood, kind: 'dining' });
+    const chair = createWoodChair(GFX, { ...wood, kind: 'dining', height: SEAT_HEIGHT });
     chair.group.name = `${side} central AI reading chair ${index + 1}`;
     furnish(chair, spot.x, spot.z, spot.rotationY);
   });
@@ -385,7 +385,7 @@ for (const [index, corner] of CORNER_NOOKS.entries()) {
 
   // Four chairs around each table: the inward one, then three more spaced on the other diagonals.
   nook.chairs.forEach((spot, chairIndex) => {
-    const chair = createWoodChair(GFX, { ...wood, kind: 'armchair' });
+    const chair = createWoodChair(GFX, { ...wood, kind: 'armchair', height: SEAT_HEIGHT });
     chair.group.name = 'corner ' + (index + 1) + ' reading chair ' + (chairIndex + 1);
     furnish(chair, spot.x, spot.z, spot.rotationY);
   });
