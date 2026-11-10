@@ -9,12 +9,6 @@ const PALETTE = Object.freeze({
   ivory: '#e7d6b2', gold: '#c6a05f', teal: '#3c7772',
   coral: '#b96558', dark: '#351d2a',
 });
-const RELIEF = Object.freeze({
-  field: '#818181', fieldLight: '#8b8b8b', navy: '#686868',
-  ivory: '#b7b7b7', gold: '#a2a2a2', teal: '#777777',
-  coral: '#929292', dark: '#626262',
-});
-
 export const RUG_DEFAULTS = Object.freeze({
   width: 3.8, depth: 3.15, thickness: 0.018, fringeLength: 0.075,
 });
@@ -255,25 +249,35 @@ function paintDesign(ctx, width, height, palette) {
   }
 }
 
-function weave(ctx, width, height, relief = false) {
+function weave(ctx, width, height) {
   const rand = random(1837);
   ctx.save();
-  ctx.globalAlpha = relief ? 0.24 : 0.16;
-  for (let y = 0; y < height; y += 3) {
-    ctx.fillStyle = y % 6 === 0 ? (relief ? '#b5b5b5' : '#f3dfbd') : (relief ? '#555555' : '#27131d');
-    ctx.fillRect(0, y, width, 0.65);
+
+  // Coarse, irregular yarn courses stay readable at shelf-camera distances;
+  // single-pixel noise and a dense bump map alias into visible shimmer.
+  for (let y = 0, row = 0; y < height; y += 8, row++) {
+    const offset = row % 2 ? 3 : 0;
+    ctx.fillStyle = row % 2 ? 'rgba(239, 218, 184, 0.11)' : 'rgba(37, 19, 27, 0.10)';
+    ctx.fillRect(0, y, width, 1.5);
+    for (let x = offset; x < width; x += 8) {
+      const slub = 2.5 + rand() * 2.5;
+      const shade = rand() < 0.5 ? 'rgba(240, 220, 188, 0.10)' : 'rgba(35, 18, 25, 0.09)';
+      ctx.fillStyle = shade;
+      ctx.fillRect(x + rand() * 1.5, y + 1.5 + rand() * 2, slub, 1.1);
+    }
   }
-  for (let i = 0; i < 26000; i++) {
-    const x = rand() * width, y = rand() * height;
-    ctx.fillStyle = rand() < 0.5
-      ? (relief ? '#c2c2c2' : '#f1d9ad')
-      : (relief ? '#4d4d4d' : '#2d1723');
-    ctx.fillRect(x, y, 1 + rand() * 2.2, 0.7);
+
+  // A sparse handful of longer wool fibres adds variation without pixel-scale speckle.
+  ctx.globalAlpha = 0.12;
+  for (let i = 0; i < 1800; i++) {
+    const x = rand() * width;
+    const y = rand() * height;
+    ctx.fillStyle = rand() < 0.5 ? '#f1dfbd' : '#291720';
+    ctx.fillRect(x, y, 4 + rand() * 5, 1.2);
   }
   ctx.restore();
 }
-
-function paintCanvas({ relief = false } = {}) {
+function paintCanvas() {
   if (typeof document === 'undefined') return null;
   const width = 1200, height = 1000;
   const canvas = document.createElement('canvas');
@@ -281,15 +285,15 @@ function paintCanvas({ relief = false } = {}) {
   canvas.height = height;
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
-  paintDesign(ctx, width, height, relief ? RELIEF : PALETTE);
-  weave(ctx, width, height, relief);
+  paintDesign(ctx, width, height, PALETTE);
+  weave(ctx, width, height);
   return canvas;
 }
 
-function textureOf(GFX, canvas, { relief = false } = {}) {
+function textureOf(GFX, canvas) {
   if (!canvas) return null;
   const texture = new GFX.CanvasTexture(canvas);
-  if (!relief) texture.colorSpace = GFX.SRGBColorSpace;
+  texture.colorSpace = GFX.SRGBColorSpace;
   texture.anisotropy = 8;
   return texture;
 }
@@ -357,10 +361,11 @@ export function createPersianRug(GFX, options = {}) {
   const group = new GFX.Group();
   group.name = 'ornate Persian rug';
   const colorMap = textureOf(GFX, paintCanvas());
-  const bumpMap = textureOf(GFX, paintCanvas({ relief: true }), { relief: true });
   const pile = new GFX.MeshStandardMaterial({
-    color: '#ffffff', map: colorMap, bumpMap, bumpScale: 0.0018,
-    roughness: 0.98, metalness: 0,
+    color: '#ffffff', map: colorMap,
+    // The woven detail is baked into the colour map; a micro-bump map caused
+    // temporal aliasing at the library camera's viewing distance.
+    bumpMap: null, roughness: 1, metalness: 0,
   });
   const binding = new GFX.MeshStandardMaterial({ color: '#b18b50', roughness: 0.82, metalness: 0.02 });
   const foundation = new GFX.MeshStandardMaterial({ color: '#512132', roughness: 1, metalness: 0 });
@@ -369,7 +374,10 @@ export function createPersianRug(GFX, options = {}) {
   const base = new GFX.Mesh(new GFX.BoxGeometry(o.width, o.thickness, o.depth), foundation);
   base.name = 'rug foundation';
   base.position.y = o.thickness / 2;
-  base.castShadow = base.receiveShadow = true;
+  base.castShadow = true;
+  // Only the exposed pile receives shadows; the hidden foundation top must not
+  // compete as a second shadow receiver a millimetre beneath it.
+  base.receiveShadow = false;
   group.add(base);
 
   const surface = new GFX.Mesh(new GFX.PlaneGeometry(o.width - 0.02, o.depth - 0.02), pile);

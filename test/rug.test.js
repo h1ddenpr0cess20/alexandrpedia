@@ -38,6 +38,8 @@ test('the rug is a grouped asset with pile, foundation, bound edges and fringe',
   assert.equal(rug.group.children.length, 7);
   assert.deepEqual(rug.dimensions, RUG_DEFAULTS);
   assert.equal(rug.group.userData.materials.pile, rug.pile);
+  assert.equal(rug.pile.bumpMap, null, 'the rug avoids unstable micro-bump detail');
+  assert.equal(rug.group.children[0].receiveShadow, false, 'the hidden foundation is not a second shadow receiver');
   assert.equal(rug.group.children.at(-1).name, 'hand-knotted ivory fringe');
   assert.equal(rug.group.children.at(-1).geometry.normalsComputed, true);
   assert.equal(rug.group.children.at(1).name, 'woven Persian pile');
