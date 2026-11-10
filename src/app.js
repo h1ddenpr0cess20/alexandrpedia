@@ -243,9 +243,10 @@ function createMahoganyPlaqueMaterial() {
     species: 'mahogany',
     finish: 'lacquered',
     kind: 'desk',
-    width: 1.4,
-    depth: 0.65,
-    height: 0.12,
+    // Match a desk size already used by the room; the engine rejects short decorative slabs.
+    width: 1.3,
+    depth: 0.68,
+    height: DESK_HEIGHT,
   });
   const candidates = [];
   sample.group.traverse((object) => {
