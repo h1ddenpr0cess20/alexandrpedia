@@ -1,8 +1,8 @@
 /**
- * The reading room: two bookcases of AI articles (Wikipedia's and Grokipedia's), a desk, chairs and
- * tables to sit among them. Click a book on a shelf and it comes off as a 3D book hanging over the
- * desk; its article is written into its pages and it opens. Click a page's side to turn it, use the
- * arrow keys, and click the room (or press Escape) to put the book back.
+ * A four-sided reading room: History, Science, Entertainment, and Philosophy & Ideas.
+ * Each subject has its own Wikipedia and Grokipedia bookcases, reading nook, and rug.
+ * Click a book to read it; click a page's side to turn it, use the arrow keys, and click
+ * the room (or press Escape) to put the book back.
  *
  * The room itself can be looked around: drag to orbit, right-drag (or Shift-drag, or two fingers) to
  * pan, scroll or pinch to zoom, double-click or press R to come back. Dragging the open book turns it.
@@ -17,11 +17,12 @@ import { createBook } from '../vendor/madness-engine/src/props/book.js';
 import { createWoodTable } from '../vendor/madness-engine/src/props/wood-table.js';
 import { createWoodChair } from '../vendor/madness-engine/src/props/wood-chair.js';
 import { createPersianRug } from './rug.js';
-import { CATALOG, KINDS, keyOf } from './catalog.js';
+import { CATALOG, keyOf } from './catalog.js';
 import { SOURCES } from './sources.js';
 import { loadOrFallback, MAX_PAGES, pageCountForBook } from './library.js';
 import { flowPages } from '../vendor/madness-engine/src/props/book-art.js';
 import { shelveBooksByPriority } from './shelving.js';
+import { catalogsForSections } from './sections.js';
 
 // The two encyclopedias keep their distinct woods; each subject gets a complementary furniture finish.
 const SPECIES = { wikipedia: 'oak', grokipedia: 'mahogany', history: 'cherry', science: 'maple', entertainment: 'teak', philosophy: 'walnut' };
@@ -34,8 +35,7 @@ const BAYS = Object.freeze({
   entertainment:{ x: 0, z: 5.65, turn: Math.PI, sources: ['wikipedia', 'grokipedia'] },
   philosophy:    { x: -5.65, z: 0, turn: Math.PI / 2, sources: ['wikipedia', 'grokipedia'] },
 });
-const SHELF_TARGET = new GFX.Vector3(0, 1.05, -5.0);
-let activeSection = 'history';
+const SHELF_TARGET = new GFX.Vector3(0, 1.05, 0);
 
 function readAt(record) {
   const bay = BAYS[record.sectionId];
@@ -47,7 +47,12 @@ function readAt(record) {
 const READ_UPRIGHT = new GFX.Quaternion().setFromAxisAngle(new GFX.Vector3(1, 0, 0), Math.PI / 2);
 
 // A view that can go from nearly level to nearly overhead, and in close or far out.
-const { createView } = defineView({ home: { yaw: 0, pitch: 0.12, zoom: 0.65 }, limits: { pitch: [-0.02, 1.35], zoom: [0.03, 2.4] } });
+const VIEW_HOME_ZOOM = 1.6;
+const BOOK_VIEW_ZOOM = 0.68;
+const { createView } = defineView({
+  home: { yaw: Math.PI / 4, pitch: 0.48, zoom: VIEW_HOME_ZOOM },
+  limits: { pitch: [0.08, 1.35], zoom: [0.35, 2.4] },
+});
 
 const loading = document.getElementById('loading');
 const loadingNote = document.getElementById('loading-note');
@@ -95,9 +100,9 @@ scene.add(floor);
 
 const walls = [
   { name: 'north wall', position: [0, WALL_HEIGHT / 2, -ROOM_HALF], rotation: 0 },
-  { name: 'east wall', position: [ROOM_HALF, WALL_HEIGHT / 2, 0], rotation: Math.PI / 2 },
+  { name: 'east wall', position: [ROOM_HALF, WALL_HEIGHT / 2, 0], rotation: -Math.PI / 2 },
   { name: 'south wall', position: [0, WALL_HEIGHT / 2, ROOM_HALF], rotation: Math.PI },
-  { name: 'west wall', position: [-ROOM_HALF, WALL_HEIGHT / 2, 0], rotation: -Math.PI / 2 },
+  { name: 'west wall', position: [-ROOM_HALF, WALL_HEIGHT / 2, 0], rotation: Math.PI / 2 },
 ];
 for (const spec of walls) {
   const panel = new GFX.Mesh(new GFX.PlaneGeometry(ROOM_SIZE, WALL_HEIGHT), wallMaterial);
@@ -129,11 +134,8 @@ function furnish(piece, x, z, turn = 0) {
 }
 
 const cases = {};
-const sectionBooks = new Map();
-
 // Paired cases line each wall. Each pair gets a desk, armchair and side table in front.
 for (const [sectionId, bay] of Object.entries(BAYS)) {
-  sectionBooks.set(sectionId, []);
   for (const [index, sourceId] of bay.sources.entries()) {
     const side = index === 0 ? -0.56 : 0.56;
     const shelf = createBookcase(GFX, {
@@ -182,21 +184,7 @@ const BOOK_PAGE_WIDTH = 0.30;
 const BOOK_BASE_HEIGHT = 0.42;
 const BOOK_LEAF_PITCH = 0.0006;
 
-const SECTION_CATALOGS = {
-  history: ["Ancient Greece","Ancient Rome","Ancient Egypt","Mesopotamia","Persian Empire","Maya civilization","Middle Ages","Renaissance","Industrial Revolution","French Revolution","World War I","World War II","Cold War","Julius Caesar","Cleopatra","Genghis Khan","Napoleon","Abraham Lincoln","Nelson Mandela"],
-  science: [
-    ...CATALOG.map((entry) => entry.title),
-    'Physics', 'Quantum mechanics', 'Theory of relativity', 'Black hole', 'Cosmology', 'Solar System',
-    'James Webb Space Telescope', 'Evolution', 'DNA', 'Genetics', 'Cell biology', 'Human brain', 'Ecology',
-    'Microbiology', 'Periodic table', 'Chemical reaction', 'Plate tectonics', 'Climate change', 'Geology', 'Oceanography',
-  ],
-  entertainment: ["Cinema of the United States","Film","Television","Animation","Science fiction","Fantasy","Video game","Role-playing game","Rock music","Jazz","Electronic music","Classical music","Theatre","Musical theatre","Comic book","Manga","Photography","Architecture"],
-  philosophy: ["Philosophy","Ethics","Logic","Metaphysics","Epistemology","Existentialism","Stoicism","Democracy","Capitalism","Socialism","Freedom of speech","Human rights","Censorship","Propaganda","Consciousness","Free will","Language","Mythology","Aesthetics","Psychology"],
-};
-const sectionCatalog = (sectionId) => SECTION_CATALOGS[sectionId].map((title) => ({
-  title,
-  kind: CATALOG.find((entry) => entry.title === title)?.kind ?? 'topic',
-}));
+const SECTION_CATALOGS = catalogsForSections(CATALOG);
 
 for (const [sectionId, bay] of Object.entries(BAYS)) {
   const catalog = sectionCatalog(sectionId);
@@ -233,7 +221,6 @@ for (const [sectionId, bay] of Object.entries(BAYS)) {
       };
       books.set(record.key, record);
       byGroup.set(book.group, record);
-      sectionBooks.get(sectionId).push(record);
       return book;
     }));
     const { left } = shelveBooksByPriority(cases[`${sectionId}:${sourceId}`], prepared);
@@ -269,6 +256,7 @@ function takeDown(record) {
   book.group.scale.setScalar(1);
   reading = record;
   moving.add(record);
+  stage.view.zoomBy(BOOK_VIEW_ZOOM / stage.view.aim.zoom);
   focusOn(readAt(record));
 }
 
@@ -282,13 +270,13 @@ function putBack(record) {
   book.group.scale.copy(home.scale);
   moving.delete(record);
   if (reading === record) reading = null;
-  focusOn(new GFX.Vector3(BAYS[record.sectionId].x, 1.05, BAYS[record.sectionId].z));
+  stage.view.zoomBy(VIEW_HOME_ZOOM / stage.view.aim.zoom);
+  focusOn(SHELF_TARGET);
 }
 
 function select(key) {
   const record = books.get(key);
   if (!record || reading === record) return;
-  activeSection = record.sectionId;
   if (reading) putBack(reading);
   takeDown(record);
   record.book.open();
