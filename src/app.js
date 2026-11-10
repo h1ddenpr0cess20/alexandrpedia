@@ -12,7 +12,7 @@ import * as GFX from '../vendor/madness-engine/src/gfx/index.js';
 import { createStage } from '../vendor/madness-engine/src/stage.js';
 import { paintRoom } from '../vendor/madness-engine/src/textures/rooms/studio.js';
 import { defineView } from '../vendor/madness-engine/src/view.js';
-import { createBookcase, stockBooks } from '../vendor/madness-engine/src/props/bookcase.js';
+import { createBookcase, stockBooks, woodMaterial, woodUV } from '../vendor/madness-engine/src/props/bookcase.js';
 import { createBook } from '../vendor/madness-engine/src/props/book.js';
 import { createWoodTable } from '../vendor/madness-engine/src/props/wood-table.js';
 import { createWoodChair } from '../vendor/madness-engine/src/props/wood-chair.js';
@@ -237,36 +237,16 @@ function createSectionSignFace(sectionId, collectionLabel, compact = false) {
   });
 }
 
-/** Clone the top-surface wood material from a real engine-built mahogany table. */
-function createMahoganyPlaqueMaterial() {
-  const sample = createWoodTable(GFX, {
-    species: 'mahogany',
-    finish: 'lacquered',
-    kind: 'desk',
-    // Use dimensions already supported by the room's working desks.
-    width: 1.3,
-    depth: 0.68,
-    height: DESK_HEIGHT,
-  });
-
-  // The pinned engine explicitly exposes its resolved wood material on the
-  // returned table API. Reuse that instead of traversing implementation details.
-  if (!sample.material?.clone) {
-    console.warn('Mahogany table material is unavailable; using a plain mahogany plaque finish.');
-    return new GFX.MeshStandardMaterial({
-      color: '#58372f',
-      roughness: 0.82,
-      metalness: 0,
-    });
-  }
-
-  return sample.material.clone();
-}
-const MAHOGANY_PLAQUE_MATERIAL = createMahoganyPlaqueMaterial();
+// Use the same exported material factory and UV mapper as the engine's tables,
+// chairs and bookcases. The material owns the library's actual mahogany colour
+// and bump maps; each sign board gets wood-grain UVs along its width.
+const MAHOGANY_PLAQUE_MATERIAL = woodMaterial(GFX, 'mahogany', 'lacquered');
 
 function addPlaqueFrame(group, width) {
-  const frame = MAHOGANY_PLAQUE_MATERIAL.clone();
-  group.add(new GFX.Mesh(new GFX.BoxGeometry(width + WALL_SIGN_FRAME_EXTRA, 0.58, 0.10), frame));
+  const geometry = new GFX.BoxGeometry(width + WALL_SIGN_FRAME_EXTRA, 0.58, 0.10);
+  const position = group.position;
+  woodUV(GFX, geometry, [position.x, position.y, position.z], 'x');
+  group.add(new GFX.Mesh(geometry, MAHOGANY_PLAQUE_MATERIAL));
 }
 
 /** The center AI plaque is double-sided because its two shelves face opposite aisles. */
