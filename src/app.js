@@ -493,13 +493,8 @@ const EYE_SHAPES = ['almond', 'round', 'hooded', 'monolid', 'upturned', 'downtur
 const BUILDS = ['average', 'slim', 'athletic', 'stocky', 'heavy'];
 const choose = (list) => list[Math.floor(Math.random() * list.length)];
 
-/**
- * A reader with a random sex, build, skin tone and features. The library has no sunglasses.
- * Returns the figure and its sex.
- */
-function randomReader() {
-  const sex = choose(['male', 'female']);
-  const man = createHuman(GFX, { sex });
+/** A random look for a figure of `sex`: build, skin tone and features. The library has no sunglasses. */
+function randomLook(sex) {
   const look = {
     glasses: 'none',
     build: choose(BUILDS),
@@ -512,25 +507,9 @@ function randomReader() {
     eyeShape: choose(EYE_SHAPES),
   };
   if (sex === 'male') look.beard = choose(['none', 'full']);
-  man.customize(look);
-  man.setShirtColor(choose(READER_SHIRTS));
-  return { man, sex };
+  return look;
 }
 
-/** Frees a figure's geometry and textures once it has left the room. */
-function releasePerson(object) {
-  object.traverse((node) => {
-    node.geometry?.dispose?.();
-    for (const material of [].concat(node.material ?? [])) {
-      for (const key of ['map', 'bumpMap', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'alphaMap', 'detailMap']) {
-        material[key]?.dispose?.();
-      }
-      material.dispose?.();
-    }
-  });
-}
-
-// The chairs of all four corners: each is a seat a reader can take.
 const READER_SEATS = CORNER_NOOKS.flatMap((corner, cornerIndex) => {
   const nook = cornerReadingNookPlacement({ roomHalf: ROOM_HALF, cornerX: corner.cornerX, cornerZ: corner.cornerZ });
   return nook.chairs.map((spot, chairIndex) => ({ key: `${cornerIndex}:${chairIndex}`, spot }));
@@ -548,24 +527,57 @@ function entranceFor(spot) {
     : { x: spot.x, z: Math.sign(spot.z) * READER_EDGE };
 }
 
-/** A figure with a copy of a shelf book held open at reading distance, coming in on foot. */
+/** Frees a book's geometry and textures once it has left the room. */
+function releasePerson(object) {
+  object.traverse((node) => {
+    node.geometry?.dispose?.();
+    for (const material of [].concat(node.material ?? [])) {
+      for (const key of ['map', 'bumpMap', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'alphaMap', 'detailMap']) {
+        material[key]?.dispose?.();
+      }
+      material.dispose?.();
+    }
+  });
+}
+
+// The figures are built once, half men and half women, and reused: building a figure takes seconds.
+const figures = [];
+if (titles.length) {
+  await loadingStep('Seating the readers…');
+  for (const sex of ['male', 'male', 'female', 'female']) {
+    const man = createHuman(GFX, { sex, detail: 0.8 });
+    const joint = FIGURES[sex].joints.ball;
+    man.pose({ clip: 'idle', t: 0, time: 0 });
+    const standingSole = man.point('footL', joint)[1];
+    man.pose({ clip: 'read', t: 1, time: 0 });
+    const seatedSole = man.point('footL', joint)[1];
+    figures.push({ man, sex, lift: standingSole - seatedSole, inUse: false });
+  }
+}
+
+/** A figure in motion or seated: its seat, where it came in from, and the copy of the book it holds. */
 const readers = new Map(); // seat key -> reader
 function createReader(seat, record) {
-  const { man, sex } = randomReader();
-  const joint = FIGURES[sex].joints.ball;
-  man.pose({ clip: 'idle', t: 0, time: 0 });
-  const standingSole = man.point('footL', joint)[1];
-  man.pose({ clip: 'read', t: 1, time: 0 });
-  const seatedSole = man.point('footL', joint)[1];
+  const sexes = [...new Set(figures.filter((f) => !f.inUse).map((f) => f.sex))];
+  const sex = choose(sexes);
+  const slot = choose(figures.filter((f) => !f.inUse && f.sex === sex));
+  slot.inUse = true;
+  const { man } = slot;
+  const look = randomLook(sex);
+  man.customize(look);
+  man.setShirtColor(choose(READER_SHIRTS));
 
   // A copy of the shelf book at shelf scale: the same book as on the shelf, just not the one on it.
   const copy = createBook(GFX, { ...record.bookOptions, size: BOOK_SCALE });
+  // A reused figure lets go of the last reader's book before taking this one.
+  if (man.held('R')) man.release('R');
+  if (man.held('L')) man.release('L');
   man.hold(copy, { how: 'book' });
   man.group.name = `${sex} reader`;
   scene.add(man.group);
   const reader = {
-    key: seat.key, seat: seat.spot, entrance: entranceFor(seat.spot), man, copy,
-    lift: standingSole - seatedSole, phase: 'in', t0: performance.now() / 1000,
+    key: seat.key, seat: seat.spot, entrance: entranceFor(seat.spot), slot, copy,
+    phase: 'in', t0: performance.now() / 1000,
   };
   readers.set(seat.key, reader);
   return reader;
@@ -580,22 +592,23 @@ function walkReader(reader, now) {
   const length = Math.hypot(dx, dz);
   const elapsed = now - reader.t0;
   const along = Math.min(1, elapsed * WALK_SPEED / length);
-  const { group } = reader.man;
+  const { man, lift } = reader.slot;
+  const { group } = man;
   group.position.set(from.x + dx * along, 0, from.z + dz * along);
   group.rotation.y = Math.atan2(dx, dz);
-  reader.man.pose({ clip: 'walk', t: elapsed, time: now, speed: 1 });
+  man.pose({ clip: 'walk', t: elapsed, time: now, speed: 1 });
   if (along < 1) return true;
 
   if (inbound) {
     reader.phase = 'sit';
-    group.position.set(reader.seat.x, reader.lift, reader.seat.z);
+    group.position.set(reader.seat.x, lift, reader.seat.z);
     group.rotation.y = reader.seat.rotationY;
-    reader.man.pose({ clip: 'read', t: 1, time: 0 });
+    man.pose({ clip: 'read', t: 1, time: 0 });
     return false;
   }
-  // Out of the room.
+  // Out of the room: the figure is put away for the next reader, and the book copy is freed.
   scene.remove(group);
-  releasePerson(group);
+  reader.slot.inUse = false;
   releasePerson(reader.copy.group);
   readers.delete(reader.key);
   return false;
@@ -612,7 +625,7 @@ function animateReaders(now) {
 
 function arriveReader() {
   const free = READER_SEATS.filter((seat) => !readers.has(seat.key));
-  if (free.length && titles.length) createReader(choose(free), choose(titles));
+  if (free.length && titles.length && figures.some((f) => !f.inUse)) createReader(choose(free), choose(titles));
   wake();
 }
 
@@ -622,8 +635,8 @@ function departReader() {
   const reader = choose(seated);
   reader.phase = 'out';
   reader.t0 = performance.now() / 1000;
-  reader.man.pose({ clip: 'walk', t: 0, time: reader.t0, speed: 1 });
-  reader.man.group.position.set(reader.seat.x, 0, reader.seat.z);
+  reader.slot.man.pose({ clip: 'walk', t: 0, time: reader.t0, speed: 1 });
+  reader.slot.man.group.position.set(reader.seat.x, 0, reader.seat.z);
   wake();
 }
 
