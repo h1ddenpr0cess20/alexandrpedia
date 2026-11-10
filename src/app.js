@@ -14,7 +14,6 @@ import { paintRoom } from '../vendor/madness-engine/src/textures/rooms/studio.js
 import { defineView } from '../vendor/madness-engine/src/view.js';
 import { createBookcase, stockBooks } from '../vendor/madness-engine/src/props/bookcase.js';
 import { createBook } from '../vendor/madness-engine/src/props/book.js';
-import { createHuman, FIGURES } from '../vendor/madness-engine/src/people/index.js';
 import { createWoodTable } from '../vendor/madness-engine/src/props/wood-table.js';
 import { createWoodChair } from '../vendor/madness-engine/src/props/wood-chair.js';
 import { createPersianRug } from './rug.js';
@@ -479,49 +478,6 @@ if (missingSnapshots.length) {
   say(snapshotNotice);
 }
 
-
-// ———————————————————————————————————————————— people reading in the corners
-
-const READER_SHIRTS = ['#5b6b7a', '#7a4e3a', '#3f5e4c', '#8a6d3b'];
-const choose = (list) => list[Math.floor(Math.random() * list.length)];
-
-/**
- * Seats a man on a corner chair, his book open in his hands. The figure is lowered until his soles
- * meet the floor, as they do standing; the chair's seat is sized to his buttocks (room-layout.js).
- */
-function seatReader(spot, record) {
-  const man = createHuman(GFX, { sex: 'male' });
-  man.customize({ hair: choose(['sidePart', 'none']) });
-  man.setShirtColor(choose(READER_SHIRTS));
-
-  const joint = FIGURES.male.joints.ball;
-  man.pose({ clip: 'idle', t: 0, time: 0 });
-  const standingSole = man.point('footL', joint)[1];
-  man.pose({ clip: 'read', t: 1, time: 0 });
-  const seatedSole = man.point('footL', joint)[1];
-
-  // A copy of the shelf book, at its real size, so the one on the shelf stays where it is.
-  const book = createBook(GFX, { ...record.bookOptions, size: 1 });
-  man.hold(book, { how: 'book' });
-  man.pose({ clip: 'read', t: 1, time: 0 });
-
-  man.group.name = 'reader';
-  man.group.position.set(spot.x, standingSole - seatedSole, spot.z);
-  man.group.rotation.y = spot.rotationY;
-  scene.add(man.group);
-}
-
-// Two readers, each in a random corner on a random chair, with a book chosen at random from the titles.
-{
-  const titles = [...books.values()];
-  if (titles.length) {
-    const corners = CORNER_NOOKS.map((corner, index) => ({ corner, index })).sort(() => Math.random() - 0.5).slice(0, 2);
-    for (const { corner } of corners) {
-      const nook = cornerReadingNookPlacement({ roomHalf: ROOM_HALF, cornerX: corner.cornerX, cornerZ: corner.cornerZ });
-      seatReader(choose(nook.chairs), choose(titles));
-    }
-  }
-}
 
 // ———————————————————————————————————————————— taking a book down and putting it back
 
