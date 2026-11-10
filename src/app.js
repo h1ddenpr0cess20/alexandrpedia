@@ -518,10 +518,11 @@ function randomReader() {
 }
 
 /**
- * Seats a reader on a corner chair with a copy of a shelf book open in both hands. The figure is lowered
- * until the soles meet the floor, as they do standing; the chair's seat is sized to the figure (room-layout.js).
+ * Seats a reader on a seat with a copy of a shelf book open in both hands. The figure is lowered until the
+ * soles meet the floor, as they do standing; the chair's seat is sized to the figure (room-layout.js).
  */
-function seatReader(spot, record) {
+const readers = new Map(); // seat key -> { group, book }
+function seatReader(seat, record) {
   const { man, sex } = randomReader();
 
   const joint = FIGURES[sex].joints.ball;
@@ -536,21 +537,63 @@ function seatReader(spot, record) {
   man.pose({ clip: 'read', t: 1, time: 0 });
 
   man.group.name = `${sex} reader`;
-  man.group.position.set(spot.x, standingSole - seatedSole, spot.z);
-  man.group.rotation.y = spot.rotationY;
+  man.group.position.set(seat.spot.x, standingSole - seatedSole, seat.spot.z);
+  man.group.rotation.y = seat.spot.rotationY;
   scene.add(man.group);
+  readers.set(seat.key, { group: man.group, book: copy });
 }
 
-// Two readers, each in a random corner on a random chair, with a title picked at random.
-{
-  const titles = [...books.values()];
-  if (titles.length) {
-    const corners = [...CORNER_NOOKS].sort(() => Math.random() - 0.5).slice(0, 2);
-    for (const corner of corners) {
-      const nook = cornerReadingNookPlacement({ roomHalf: ROOM_HALF, cornerX: corner.cornerX, cornerZ: corner.cornerZ });
-      seatReader(choose(nook.chairs), choose(titles));
+/** Frees a figure's geometry and textures once it has left the room. */
+function releasePerson(object) {
+  object.traverse((node) => {
+    node.geometry?.dispose?.();
+    for (const material of [].concat(node.material ?? [])) {
+      for (const key of ['map', 'bumpMap', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'alphaMap', 'detailMap']) {
+        material[key]?.dispose?.();
+      }
+      material.dispose?.();
     }
-  }
+  });
+}
+
+// The chairs of all four corners: each is a seat a reader can take.
+const READER_SEATS = CORNER_NOOKS.flatMap((corner, cornerIndex) => {
+  const nook = cornerReadingNookPlacement({ roomHalf: ROOM_HALF, cornerX: corner.cornerX, cornerZ: corner.cornerZ });
+  return nook.chairs.map((spot, chairIndex) => ({ key: `${cornerIndex}:${chairIndex}`, spot }));
+});
+const MIN_READERS = 1;
+const MAX_READERS = 4;
+const titles = [...books.values()];
+
+function arriveReader() {
+  const free = READER_SEATS.filter((seat) => !readers.has(seat.key));
+  if (free.length && titles.length) seatReader(choose(free), choose(titles));
+}
+
+function departReader() {
+  const key = choose([...readers.keys()]);
+  const reader = readers.get(key);
+  scene.remove(reader.group);
+  releasePerson(reader.group);
+  releasePerson(reader.book.group);
+  readers.delete(key);
+}
+
+// Readers come and go: every so often one leaves or one arrives on a free chair, between one and four at a time.
+function turnOver() {
+  const count = readers.size;
+  if (count <= MIN_READERS) arriveReader();
+  else if (count >= MAX_READERS) departReader();
+  else if (Math.random() < 0.5) arriveReader();
+  else departReader();
+  wake();
+  setTimeout(turnOver, 15000 + Math.random() * 30000);
+}
+
+if (titles.length) {
+  arriveReader();
+  arriveReader();
+  setTimeout(turnOver, 15000 + Math.random() * 30000);
 }
 
 // ———————————————————————————————————————————— taking a book down and putting it back
