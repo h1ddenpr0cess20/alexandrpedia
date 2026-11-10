@@ -40,7 +40,8 @@ async function readSnapshot(sourceId, title, url, license) {
     : new URL('../', import.meta.url);
   const file = new URL(`data/${sourceId}/${encodeURIComponent(slugOf(title))}.json`, base);
   const response = await fetch(file.href);
-  if (response.status === 404) throw new ArticleNotFound(sourceId, title);
+  const sourceName = sourceId === 'wikipedia' ? 'Wikipedia' : 'Grokipedia';
+  if (response.status === 404) throw new ArticleNotFound(sourceName, title);
   if (!response.ok) throw new Error(`Could not read ${sourceId} snapshot (${response.status}): ${file.pathname}`);
   const article = await response.json();
   if (!article || typeof article.text !== 'string' || !article.text.trim()) {
