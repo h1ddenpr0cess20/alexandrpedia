@@ -7,20 +7,23 @@
 import { keyOf } from './catalog.js';
 import { fallbackFor } from './fallbacks.js';
 import { SOURCES, sourceById } from './sources.js';
-import { keepSaved, readSaved } from './store.js';
 
-/** Roughly how many characters a page of the book holds. */
-export const CHARS_PER_PAGE = 1100;
-/** The book's pages: at least this many, and at most this many (props/book.js holds 160 leaves). */
-export const MIN_PAGES = 20;
-export const MAX_PAGES = 200;
+/** Two sides per leaf, capped at the engine's 160-leaf maximum. */
+export const MIN_PAGES = 2;
+export const MAX_PAGES = 320;
 
 const cache = new Map();
 
 /** How many pages to make a book with for a text. Always even: pages go two to a leaf. */
+/**
+ * Server-safe metadata estimate only. Actual shelf geometry uses the engine's
+ * canvas-measured flowPages() result, so this estimate never controls book size.
+ */
 export function pageCountFor(text) {
-  const wanted = Math.ceil(String(text).length / CHARS_PER_PAGE) + 2;
-  const even = wanted + (wanted % 2);
+  const value = String(text ?? '');
+  if (!value.trim()) return MIN_PAGES;
+  const estimated = Math.max(1, Math.ceil(value.length / 1900));
+  const even = estimated + (estimated % 2);
   return Math.min(MAX_PAGES, Math.max(MIN_PAGES, even));
 }
 
@@ -37,14 +40,11 @@ export async function loadArticle(sourceId, entry, { fetchOptions, source: given
   const key = entry.key ?? keyOf(entry); // catalog entries carry no key of their own: without this every book shared one cache slot
   const id = `${source.id}:${key}`;
   if (!cache.has(id)) {
-    // Only a book that is chosen is ever loaded: first what was kept from an earlier visit, then the source.
+    // Read a committed snapshot once per article per visit.
     const promise = (async () => {
-      const kept = given ? undefined : await readSaved(id);
-      if (kept?.text) return kept;
+      // Committed snapshots are authoritative; older IndexedDB data must not mask them.
       const article = await source.fetch(entry.titles?.[source.id] ?? entry.title, fetchOptions);
-      const made = { ...article, kind: entry.kind, key, pageCount: pageCountFor(article.text) };
-      if (!given) keepSaved(id, made);
-      return made;
+      return { ...article, kind: entry.kind, key, pageCount: pageCountFor(article.text) };
     })();
     cache.set(id, promise);
     // A failed load is not kept, so a retry asks again.
