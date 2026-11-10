@@ -517,32 +517,6 @@ function randomReader() {
   return { man, sex };
 }
 
-/**
- * Seats a reader on a seat with a copy of a shelf book open in both hands. The figure is lowered until the
- * soles meet the floor, as they do standing; the chair's seat is sized to the figure (room-layout.js).
- */
-const readers = new Map(); // seat key -> { group, book }
-function seatReader(seat, record) {
-  const { man, sex } = randomReader();
-
-  const joint = FIGURES[sex].joints.ball;
-  man.pose({ clip: 'idle', t: 0, time: 0 });
-  const standingSole = man.point('footL', joint)[1];
-  man.pose({ clip: 'read', t: 1, time: 0 });
-  const seatedSole = man.point('footL', joint)[1];
-
-  // A copy of the shelf book at shelf scale: the same book as on the shelf, just not the one on it.
-  const copy = createBook(GFX, { ...record.bookOptions, size: BOOK_SCALE });
-  man.hold(copy, { how: 'book' });
-  man.pose({ clip: 'read', t: 1, time: 0 });
-
-  man.group.name = `${sex} reader`;
-  man.group.position.set(seat.spot.x, standingSole - seatedSole, seat.spot.z);
-  man.group.rotation.y = seat.spot.rotationY;
-  scene.add(man.group);
-  readers.set(seat.key, { group: man.group, book: copy });
-}
-
 /** Frees a figure's geometry and textures once it has left the room. */
 function releasePerson(object) {
   object.traverse((node) => {
@@ -563,30 +537,103 @@ const READER_SEATS = CORNER_NOOKS.flatMap((corner, cornerIndex) => {
 });
 const MIN_READERS = 1;
 const MAX_READERS = 4;
+const WALK_SPEED = 1.0; // metres a second
+const READER_EDGE = ROOM_HALF - 0.6;
 const titles = [...books.values()];
+
+/** Where a reader comes in from: the room's edge on the seat's nearer axis, so the walk clears the other chairs. */
+function entranceFor(spot) {
+  return Math.abs(spot.x) >= Math.abs(spot.z)
+    ? { x: Math.sign(spot.x) * READER_EDGE, z: spot.z }
+    : { x: spot.x, z: Math.sign(spot.z) * READER_EDGE };
+}
+
+/** A figure with a copy of a shelf book held open at reading distance, coming in on foot. */
+const readers = new Map(); // seat key -> reader
+function createReader(seat, record) {
+  const { man, sex } = randomReader();
+  const joint = FIGURES[sex].joints.ball;
+  man.pose({ clip: 'idle', t: 0, time: 0 });
+  const standingSole = man.point('footL', joint)[1];
+  man.pose({ clip: 'read', t: 1, time: 0 });
+  const seatedSole = man.point('footL', joint)[1];
+
+  // A copy of the shelf book at shelf scale: the same book as on the shelf, just not the one on it.
+  const copy = createBook(GFX, { ...record.bookOptions, size: BOOK_SCALE });
+  man.hold(copy, { how: 'book' });
+  man.group.name = `${sex} reader`;
+  scene.add(man.group);
+  const reader = {
+    key: seat.key, seat: seat.spot, entrance: entranceFor(seat.spot), man, copy,
+    lift: standingSole - seatedSole, phase: 'in', t0: performance.now() / 1000,
+  };
+  readers.set(seat.key, reader);
+  return reader;
+}
+
+/** Walks a reader one step along the path for this frame; sits them down or removes them at the end. */
+function walkReader(reader, now) {
+  const inbound = reader.phase === 'in';
+  const from = inbound ? reader.entrance : reader.seat;
+  const to = inbound ? reader.seat : reader.entrance;
+  const dx = to.x - from.x, dz = to.z - from.z;
+  const length = Math.hypot(dx, dz);
+  const elapsed = now - reader.t0;
+  const along = Math.min(1, elapsed * WALK_SPEED / length);
+  const { group } = reader.man;
+  group.position.set(from.x + dx * along, 0, from.z + dz * along);
+  group.rotation.y = Math.atan2(dx, dz);
+  reader.man.pose({ clip: 'walk', t: elapsed, time: now, speed: 1 });
+  if (along < 1) return true;
+
+  if (inbound) {
+    reader.phase = 'sit';
+    group.position.set(reader.seat.x, reader.lift, reader.seat.z);
+    group.rotation.y = reader.seat.rotationY;
+    reader.man.pose({ clip: 'read', t: 1, time: 0 });
+    return false;
+  }
+  // Out of the room.
+  scene.remove(group);
+  releasePerson(group);
+  releasePerson(reader.copy.group);
+  readers.delete(reader.key);
+  return false;
+}
+
+/** Walks the readers who are on their way in or out. Returns whether any still are. */
+function animateReaders(now) {
+  let moving = false;
+  for (const reader of [...readers.values()]) {
+    if (reader.phase === 'in' || reader.phase === 'out') moving = walkReader(reader, now) || moving;
+  }
+  return moving;
+}
 
 function arriveReader() {
   const free = READER_SEATS.filter((seat) => !readers.has(seat.key));
-  if (free.length && titles.length) seatReader(choose(free), choose(titles));
+  if (free.length && titles.length) createReader(choose(free), choose(titles));
+  wake();
 }
 
 function departReader() {
-  const key = choose([...readers.keys()]);
-  const reader = readers.get(key);
-  scene.remove(reader.group);
-  releasePerson(reader.group);
-  releasePerson(reader.book.group);
-  readers.delete(key);
+  const seated = [...readers.values()].filter((reader) => reader.phase === 'sit');
+  if (!seated.length) return;
+  const reader = choose(seated);
+  reader.phase = 'out';
+  reader.t0 = performance.now() / 1000;
+  reader.man.pose({ clip: 'walk', t: 0, time: reader.t0, speed: 1 });
+  reader.man.group.position.set(reader.seat.x, 0, reader.seat.z);
+  wake();
 }
 
-// Readers come and go: every so often one leaves or one arrives on a free chair, between one and four at a time.
+// Readers come and go: every so often one walks in or walks out, between one and four at a time.
 function turnOver() {
   const count = readers.size;
   if (count <= MIN_READERS) arriveReader();
   else if (count >= MAX_READERS) departReader();
   else if (Math.random() < 0.5) arriveReader();
   else departReader();
-  wake();
   setTimeout(turnOver, 15000 + Math.random() * 30000);
 }
 
@@ -835,6 +882,7 @@ renderer.setAnimationLoop((now) => {
   if (eased || stage.target.distanceToSquared(GOAL) > 1e-10) dirty = true;
   stage.target.lerp(GOAL, 1 - Math.exp(-10 * dt));
   view.step(dt);
+  if (animateReaders(now / 1000)) dirty = true;
   if (!dirty) return;
   dirty = false;
   stage.look();   // place the camera on the target, from the view
