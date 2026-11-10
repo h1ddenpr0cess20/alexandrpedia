@@ -19,30 +19,40 @@ import { createWoodChair } from '../vendor/madness-engine/src/props/wood-chair.j
 import { createPersianRug } from './rug.js';
 import { CATALOG, keyOf } from './catalog.js';
 import { SOURCES } from './sources.js';
-import { loadOrFallback, MAX_PAGES, pageCountForBook } from './library.js';
+import { loadArticle, MAX_PAGES, pageCountForBook } from './library.js';
 import { flowPages } from '../vendor/madness-engine/src/props/book-art.js';
 import { shelveBooksByPriority } from './shelving.js';
 import { catalogsForSections } from './sections.js';
 
-// The two encyclopedias keep their distinct woods; each subject gets a complementary furniture finish.
-const SPECIES = { wikipedia: 'oak', grokipedia: 'mahogany', history: 'cherry', science: 'maple', entertainment: 'teak', philosophy: 'walnut' };
+// Wikipedia and Grokipedia retain their oak and mahogany identities. Subject nooks have
+// complementary woods, while the AI centerpiece uses walnut as a neutral focal point.
+const SPECIES = {
+  wikipedia: 'oak', grokipedia: 'mahogany', ai: 'walnut',
+  history: 'cherry', science: 'maple', entertainment: 'teak', philosophy: 'walnut',
+};
 const DESK_HEIGHT = 0.75;
-
-/** Four reading bays around the square room, each with matching Wikipedia and Grokipedia cases. */
-const BAYS = Object.freeze({
-  history:       { x: 0, z: -5.65, turn: 0, sources: ['wikipedia', 'grokipedia'] },
-  science:       { x: 5.65, z: 0, turn: -Math.PI / 2, sources: ['wikipedia', 'grokipedia'] },
-  entertainment:{ x: 0, z: 5.65, turn: Math.PI, sources: ['wikipedia', 'grokipedia'] },
-  philosophy:    { x: -5.65, z: 0, turn: Math.PI / 2, sources: ['wikipedia', 'grokipedia'] },
+const SOURCES_IN_ORDER = ['wikipedia', 'grokipedia'];
+const AI_BAY = Object.freeze({ x: 0, z: 0, turn: 0, sources: SOURCES_IN_ORDER });
+const WALL_BAYS = Object.freeze({
+  history:       { x: 0, z: -4.35, turn: 0, sources: SOURCES_IN_ORDER },
+  science:       { x: 4.35, z: 0, turn: -Math.PI / 2, sources: SOURCES_IN_ORDER },
+  entertainment:{ x: 0, z: 4.35, turn: Math.PI, sources: SOURCES_IN_ORDER },
+  philosophy:    { x: -4.35, z: 0, turn: Math.PI / 2, sources: SOURCES_IN_ORDER },
 });
-const SHELF_TARGET = new GFX.Vector3(0, 1.05, 0);
+const SHELF_TARGET = new GFX.Vector3(0, 1.15, 0);
+const AXIS_Y = new GFX.Vector3(0, 1, 0);
+
+function pointInBay(bay, x, z, y = 0) {
+  return new GFX.Vector3(x, y, z)
+    .applyAxisAngle(AXIS_Y, bay.turn)
+    .add(new GFX.Vector3(bay.x, 0, bay.z));
+}
 
 function readAt(record) {
-  const bay = BAYS[record.sectionId];
-  const side = record.source.id === 'wikipedia' ? -0.75 : 0.75;
-  const local = new GFX.Vector3(side, DESK_HEIGHT + 0.42, 1.65)
-    .applyAxisAngle(new GFX.Vector3(0, 1, 0), bay.turn);
-  return local.add(new GFX.Vector3(bay.x, 0, bay.z));
+  const bay = record.sectionId === 'ai' ? AI_BAY : WALL_BAYS[record.sectionId];
+  const towardCenter = record.source.id === 'wikipedia' ? 1 : -1;
+  const lateral = record.sectionId === 'ai' ? 0 : -1.65;
+  return pointInBay(bay, lateral, towardCenter * 1.18, DESK_HEIGHT + 0.42);
 }
 const READ_UPRIGHT = new GFX.Quaternion().setFromAxisAngle(new GFX.Vector3(1, 0, 0), Math.PI / 2);
 
@@ -113,19 +123,24 @@ for (const spec of walls) {
   scene.add(panel);
 }
 
-const centerRug = createPersianRug(GFX, { width: 4.2, depth: 3.2, fringeLength: 0.055 });
-centerRug.group.name = 'central Persian rug';
-centerRug.group.position.set(0, 0.008, 0.1);
+// Earth-toned woven rugs distinguish the central AI room and each subject's paired reading nooks.
+const centerRug = createPersianRug(GFX, { width: 4.7, depth: 3.5, fringeLength: 0.06 });
+centerRug.group.name = 'central AI Persian rug';
+centerRug.group.position.set(0, 0.008, 0);
 scene.add(centerRug.group);
-for (const [sectionId, bay] of Object.entries(BAYS)) {
-  const rug = createPersianRug(GFX, { width: 3.15, depth: 1.45, fringeLength: 0.04 });
-  rug.group.name = `${sectionId} reading rug`;
-  rug.group.position.set(bay.x, 0.01, bay.z);
-  rug.group.rotation.y = bay.turn;
-  scene.add(rug.group);
+
+for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
+  for (const sourceId of SOURCES_IN_ORDER) {
+    const side = sourceId === 'wikipedia' ? 1 : -1;
+    const rug = createPersianRug(GFX, { width: 2.1, depth: 2.9, fringeLength: 0.04 });
+    rug.group.name = `${sectionId} ${sourceId} reading rug`;
+    rug.group.position.copy(pointInBay(bay, -1.65, side * 1.85, 0.01));
+    rug.group.rotation.y = bay.turn;
+    scene.add(rug.group);
+  }
 }
 
-/** Place a piece of furniture, with its front aimed toward its bay's shelves. */
+/** Place furniture with its local front aimed at the relevant shelf. */
 function furnish(piece, x, z, turn = 0) {
   piece.group.position.set(x, 0, z);
   piece.group.rotation.y = turn;
@@ -134,42 +149,80 @@ function furnish(piece, x, z, turn = 0) {
 }
 
 const cases = {};
-// Paired cases line each wall. Each pair gets a desk, armchair and side table in front.
-for (const [sectionId, bay] of Object.entries(BAYS)) {
-  for (const [index, sourceId] of bay.sources.entries()) {
-    const side = index === 0 ? -0.56 : 0.56;
+
+/**
+ * Two matching cases share their back panels at the center plane. Wikipedia faces
+ * toward the room center; Grokipedia faces the opposite direction.
+ */
+function addBackToBackCases(sectionId, bay, width) {
+  const depth = 0.34;
+  const inward = new GFX.Vector3(0, 0, 1).applyAxisAngle(AXIS_Y, bay.turn);
+  for (const sourceId of SOURCES_IN_ORDER) {
+    const sign = sourceId === 'wikipedia' ? 1 : -1;
     const shelf = createBookcase(GFX, {
-      species: SPECIES[sourceId], shelves: 4, width: 1.05, depth: 0.34, height: 2.2,
-      seed: sectionId.length * 31 + index + 2,
+      species: SPECIES[sourceId],
+      shelves: 4,
+      width,
+      depth,
+      height: sectionId === 'ai' ? 2.45 : 2.2,
+      seed: sectionId.length * 31 + (sourceId === 'wikipedia' ? 3 : 7),
     });
-    const pos = new GFX.Vector3(side, 0, 0).applyAxisAngle(new GFX.Vector3(0, 1, 0), bay.turn);
-    shelf.group.position.set(bay.x + pos.x, 0, bay.z + pos.z);
-    shelf.group.rotation.y = bay.turn;
+    shelf.group.position.set(
+      bay.x + inward.x * sign * depth / 2,
+      0,
+      bay.z + inward.z * sign * depth / 2,
+    );
+    shelf.group.rotation.y = bay.turn + (sign < 0 ? Math.PI : 0);
     scene.add(shelf.group);
     cases[`${sectionId}:${sourceId}`] = shelf;
   }
-
-  const wood = { species: SPECIES[sectionId], finish: 'lacquered' };
-  const deskLocal = new GFX.Vector3(0, 0, 1.75).applyAxisAngle(new GFX.Vector3(0, 1, 0), bay.turn);
-  const desk = deskLocal.add(new GFX.Vector3(bay.x, 0, bay.z));
-  furnish(createWoodTable(GFX, { ...wood, kind: 'desk', width: 1.65, depth: 0.78, height: DESK_HEIGHT }), desk.x, desk.z, bay.turn);
-  const chairLocal = new GFX.Vector3(0, 0, 2.85).applyAxisAngle(new GFX.Vector3(0, 1, 0), bay.turn);
-  const chair = chairLocal.add(new GFX.Vector3(bay.x, 0, bay.z));
-  furnish(createWoodChair(GFX, { ...wood, kind: 'armchair' }), chair.x, chair.z, bay.turn + Math.PI);
-  const sideLocal = new GFX.Vector3(-1.2, 0, 1.9).applyAxisAngle(new GFX.Vector3(0, 1, 0), bay.turn);
-  const side = sideLocal.add(new GFX.Vector3(bay.x, 0, bay.z));
-  furnish(createWoodTable(GFX, { ...wood, kind: 'side' }), side.x, side.z, bay.turn);
 }
 
-// A shared lounge occupies the open center, keeping its seating and coffee table on the central rug.
-const loungeWood = { species: 'walnut', finish: 'lacquered' };
-furnish(createWoodTable(GFX, { ...loungeWood, kind: 'coffee', width: 1.35, depth: 0.78, height: 0.43 }), 0, -0.05);
-furnish(createWoodChair(GFX, { ...loungeWood, kind: 'armchair' }), -1.35, -0.05, Math.PI / 2);
-furnish(createWoodChair(GFX, { ...loungeWood, kind: 'armchair' }), 1.35, -0.05, -Math.PI / 2);
-furnish(createWoodChair(GFX, { ...loungeWood, kind: 'armchair' }), 0, 1.25, Math.PI);
-furnish(createWoodChair(GFX, { ...loungeWood, kind: 'armchair' }), 0, -1.35, 0);
-furnish(createWoodTable(GFX, { ...loungeWood, kind: 'side' }), -2.05, 1.15);
-furnish(createWoodTable(GFX, { ...loungeWood, kind: 'side' }), 2.05, 1.15);
+addBackToBackCases('ai', AI_BAY, 2.35);
+for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
+  addBackToBackCases(sectionId, bay, 1.7);
+}
+
+// AI reading desks sit on opposite sides of the central island.
+for (const sourceId of SOURCES_IN_ORDER) {
+  const sign = sourceId === 'wikipedia' ? 1 : -1;
+  const wood = { species: SPECIES.ai, finish: 'lacquered' };
+  furnish(
+    createWoodTable(GFX, { ...wood, kind: 'desk', width: 1.3, depth: 0.68, height: DESK_HEIGHT }),
+    0, sign * 1.35, sign > 0 ? 0 : Math.PI,
+  );
+  furnish(
+    createWoodChair(GFX, { ...wood, kind: 'armchair' }),
+    0, sign * 2.35, sign > 0 ? Math.PI : 0,
+  );
+  furnish(
+    createWoodTable(GFX, { ...wood, kind: 'side' }),
+    sign * 0.95, sign * 1.55, 0,
+  );
+}
+
+// Each wall section has a compact desk, armchair and side table beside its two-sided shelf.
+for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
+  const wood = { species: SPECIES[sectionId], finish: 'lacquered' };
+  for (const sourceId of SOURCES_IN_ORDER) {
+    const sign = sourceId === 'wikipedia' ? 1 : -1;
+    const desk = pointInBay(bay, -1.65, sign * 1.18);
+    const chair = pointInBay(bay, -1.65, sign * 2.12);
+    const side = pointInBay(bay, -2.45, sign * 1.28);
+    furnish(
+      createWoodTable(GFX, { ...wood, kind: 'desk', width: 1.35, depth: 0.68, height: DESK_HEIGHT }),
+      desk.x, desk.z, bay.turn + (sign < 0 ? Math.PI : 0),
+    );
+    furnish(
+      createWoodChair(GFX, { ...wood, kind: 'armchair' }),
+      chair.x, chair.z, bay.turn + (sign > 0 ? Math.PI : 0),
+    );
+    furnish(
+      createWoodTable(GFX, { ...wood, kind: 'side' }),
+      side.x, side.z, bay.turn,
+    );
+  }
+}
 
 /** Every book: { entry, source, book, key, home } where `home` is where it stands on its shelf. */
 await loadingStep('Reading the committed article snapshots…');
@@ -185,23 +238,36 @@ const BOOK_BASE_HEIGHT = 0.42;
 const BOOK_LEAF_PITCH = 0.0006;
 
 const SECTION_CATALOGS = catalogsForSections(CATALOG);
+const missingSnapshots = [];
 
-for (const [sectionId, bay] of Object.entries(BAYS)) {
-  const catalog = sectionCatalog(sectionId);
+for (const [sectionId, catalog] of Object.entries(SECTION_CATALOGS)) {
+  const bay = sectionId === 'ai' ? AI_BAY : WALL_BAYS[sectionId];
   for (const sourceId of bay.sources) {
     const source = SOURCES.find((item) => item.id === sourceId);
-    const stock = stockBooks(catalog.length, sectionId.length + (sourceId === 'wikipedia' ? 11 : 17));
-    const prepared = await Promise.all(catalog.map(async (entry, index) => {
-      const article = await loadOrFallback(sourceId, entry);
+    const available = [];
+    for (const entry of catalog) {
+      try {
+        const article = await loadArticle(sourceId, entry);
+        available.push({ entry, article });
+      } catch (error) {
+        missingSnapshots.push(`${sourceId}/${entry.title}`);
+        console.warn(`Missing local article snapshot: ${sourceId}/${entry.title} (${error.message})`);
+      }
+    }
+
+    const stock = stockBooks(available.length, sectionId.length + (sourceId === 'wikipedia' ? 11 : 17));
+    const prepared = await Promise.all(available.map(async ({ entry, article }, index) => {
       const pages = flowPages(article.text, { print: source.print });
       const visiblePages = pages.slice(0, MAX_PAGES);
       const pageCount = pageCountForBook(visiblePages.length);
-      if (pages.length > MAX_PAGES) console.warn(`${article.title}: ${pages.length} measured pages exceeds the engine's ${MAX_PAGES}-page limit.`);
+      if (pages.length > MAX_PAGES) {
+        console.warn(`${article.title}: ${pages.length} measured pages exceeds the engine's ${MAX_PAGES}-page limit.`);
+      }
       const originalSize = stock[index].size;
       const book = createBook(GFX, {
         ...stock[index],
         title: article.title,
-        subtitle: `${source.name} · ${entry.kind}`,
+        subtitle: `${source.name} · ${entry.shelf ?? entry.kind}`,
         pageCount,
         pages: visiblePages,
         print: source.print,
@@ -236,6 +302,11 @@ for (const [sectionId, bay] of Object.entries(BAYS)) {
     }
   }
 }
+
+if (missingSnapshots.length) {
+  console.warn(`${missingSnapshots.length} encyclopedia snapshots are not yet imported for the new subject collections.`);
+}
+
 
 // ———————————————————————————————————————————— taking a book down and putting it back
 
@@ -281,9 +352,7 @@ function select(key) {
   takeDown(record);
   record.book.open();
   wake();
-  say(record.article.fallback
-    ? `Could not load the saved article, so a stand-in book is open. (${record.article.failure})`
-    : '');
+  say('');
 }
 
 // ———————————————————————————————————————————— picking things in the scene
@@ -419,7 +488,7 @@ canvas.addEventListener('pointerup', (e) => {
     return;
   }
   // The room: the book goes back to its shelf.
-  if (reading) { putBack(reading); say(''); }
+  if (reading) { putBack(reading); say(missingSnapshots.length ? `${missingSnapshots.length} subject articles still need local snapshots. The AI collection is available now.` : ''); }
 });
 
 canvas.addEventListener('dblclick', (e) => { if (!pick(e)) resetView(); });
