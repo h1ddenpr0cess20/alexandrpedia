@@ -51,24 +51,14 @@ function pointInBay(bay, x, z, y = 0) {
 }
 
 /** Where a book stands when it is taken down: above its table, at reading height. */
-/**
- * Which way an opened book faces, as a view yaw. The view puts the camera at
- * [sin yaw, ·, cos yaw] from its target, so turning the camera to this yaw stands
- * you squarely in front of the book. Wall-nook books face the middle of the room;
- * the central AI table faces the original front (+z).
- */
-function readingYaw(record, position) {
-  if (record.sectionId === 'ai') return 0;
-  return Math.atan2(-position.x, -position.z);
-}
-
 function readingPlace(record) {
   const sourceIndex = SOURCES_IN_ORDER.indexOf(record.source.id);
   const bookHeight = DESK_HEIGHT + 0.42;
   if (record.sectionId === 'ai') {
     const side = sourceIndex === 0 ? 'left' : 'right';
     const placement = centerLongTablePlacement({ side });
-    return { position: pointInBay(AI_BAY, placement.x, placement.z, bookHeight) };
+    const table = pointInBay(AI_BAY, placement.x, placement.z, bookHeight);
+    return { position: table };
   }
   const nook = wallReadingNookPlacement({
     roomHalf: ROOM_HALF,
@@ -79,14 +69,12 @@ function readingPlace(record) {
 }
 
 // A view that can go from nearly level to nearly overhead, and in close or far out.
-const VIEW_HOME_YAW = Math.PI / 4;
+const VIEW_HOME_YAW = 0;
 const READ_UPRIGHT = new GFX.Quaternion().setFromAxisAngle(new GFX.Vector3(1, 0, 0), Math.PI / 2);
-const VIEW_HOME_ZOOM = 2.0;
-const BOOK_VIEW_ZOOM = 0.65;  // the original close reading distance
-const BOOK_VIEW_PITCH = 0.12; // the original near-level tilt, hovering just in front of the page
+const VIEW_HOME_ZOOM = 0.65;
 const { createView, groundAxes } = defineView({
-  home: { yaw: VIEW_HOME_YAW, pitch: 0.48, zoom: VIEW_HOME_ZOOM },
-  limits: { pitch: [0.08, 1.35], zoom: [0.35, 2.4] },
+  home: { yaw: VIEW_HOME_YAW, pitch: 0.12, zoom: VIEW_HOME_ZOOM },
+  limits: { pitch: [-0.02, 1.35], zoom: [0.03, 2.4] },
 });
 
 const loading = document.getElementById('loading');
@@ -105,7 +93,7 @@ const say = (text = '') => { status.textContent = text; status.hidden = !text; }
 await loadingStep('Starting the renderer…');
 const stage = await createStage(document.getElementById('host'), {
   room: paintRoom(), shadowSize: 2048, fixtures: 0, label: 'alexandrpedia',
-  lens: { distance: 9.5, fov: 36 },
+  lens: { distance: 7.5, fov: 36 },
   view: createView(),
 });
 const { scene, camera, renderer } = stage;
@@ -702,17 +690,11 @@ function takeDown(record) {
   home.parent.remove(book.group);
   scene.add(book.group);
   book.group.position.copy(place.position);
-  const yaw = readingYaw(record, place.position);
-  book.group.quaternion.setFromAxisAngle(AXIS_Y, yaw).multiply(READ_UPRIGHT);
+  book.group.quaternion.copy(READ_UPRIGHT); // upright, facing the reader, exactly as before the four-wall room
   book.group.scale.setScalar(1);
   reading = record;
   moving.add(record);
-  // Move to the table and swing round to face the open book, close up and nearly level.
-  const aim = stage.view.aim;
-  aim.yaw = yaw + Math.round((aim.yaw - yaw) / (Math.PI * 2)) * Math.PI * 2;
-  aim.pitch = BOOK_VIEW_PITCH;
-  stage.view.zoomBy(BOOK_VIEW_ZOOM / aim.zoom);
-  focusOn(place.position);
+  focusOn(place.position); // only the look point moves; the view keeps its turn, tilt and zoom
 }
 
 function putBack(record) {
@@ -725,7 +707,6 @@ function putBack(record) {
   book.group.scale.copy(home.scale);
   moving.delete(record);
   if (reading === record) reading = null;
-  stage.view.zoomBy(VIEW_HOME_ZOOM / stage.view.aim.zoom);
   focusOn(SHELF_TARGET);
   say(snapshotNotice);
 }
