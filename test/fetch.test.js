@@ -55,14 +55,14 @@ test('the Wikipedia source reads a committed local JSON snapshot', async () => {
   const body = JSON.stringify({
     title: 'Nvidia',
     url: 'https://en.wikipedia.org/wiki/Nvidia',
-    text: 'Nvidia is a company.\\n\\n#History\\n\\nIt began.',
+    text: 'Nvidia is a company.\n\n#History\n\nIt began.',
     license: 'CC BY-SA 4.0',
   });
   const { fetchImpl, calls } = scripted([[200, {}, body]]);
   const article = await WIKIPEDIA.fetch('Nvidia', { fetchImpl });
   assert.ok(new URL(calls[0]).pathname.endsWith('/data/wikipedia/Nvidia.json'));
   assert.equal(article.title, 'Nvidia');
-  assert.equal(article.text, 'Nvidia is a company.\\n\\n#History\\n\\nIt began.');
+  assert.equal(article.text, 'Nvidia is a company.\n\n#History\n\nIt began.');
   assert.equal(article.license, 'CC BY-SA 4.0');
 });
 
