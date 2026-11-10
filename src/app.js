@@ -243,48 +243,24 @@ function createMahoganyPlaqueMaterial() {
     species: 'mahogany',
     finish: 'lacquered',
     kind: 'desk',
-    // Match a desk size already used by the room; the engine rejects short decorative slabs.
+    // Use dimensions already supported by the room's working desks.
     width: 1.3,
     depth: 0.68,
     height: DESK_HEIGHT,
   });
-  const candidates = [];
-  sample.group.traverse((object) => {
-    if (!object.isMesh || !object.material) return;
-    object.geometry?.computeBoundingBox?.();
-    const bounds = object.geometry?.boundingBox;
-    const size = bounds?.getSize?.(new GFX.Vector3());
-    const horizontalArea = size ? size.x * size.z : 0;
-    const materials = Array.isArray(object.material) ? object.material : [object.material];
-    for (const material of materials) {
-      if (!material?.clone) continue;
-      const hasTexture = Boolean(material.map || material.bumpMap || material.normalMap || material.roughnessMap);
-      candidates.push({ material, score: horizontalArea + (hasTexture ? 1000 : 0) });
-    }
-  });
-  candidates.sort((a, b) => b.score - a.score);
-  if (!candidates.length) throw new Error('The engine mahogany table did not expose a reusable wood material.');
-  const textured = candidates.filter((candidate) => candidate.material.map);
-  const sourceMaterial = (textured[0] ?? candidates[0]).material;
-  const material = sourceMaterial.clone();
-  if (material.map?.clone) {
-    material.map = material.map.clone();
-    material.map.generateMipmaps = true;
-    material.map.minFilter = GFX.LinearMipmapLinearFilter;
-    material.map.magFilter = GFX.LinearFilter;
-    material.map.anisotropy = 4;
-    material.map.needsUpdate = true;
+
+  // The pinned engine explicitly exposes its resolved wood material on the
+  // returned table API. Reuse that instead of traversing implementation details.
+  if (!sample.material?.clone) {
+    console.warn('Mahogany table material is unavailable; using a plain mahogany plaque finish.');
+    return new GFX.MeshStandardMaterial({
+      color: '#58372f',
+      roughness: 0.82,
+      metalness: 0,
+    });
   }
-  // Keep the engine's mahogany colour texture, but avoid additional fine-scale
-  // bump/normal relief on a small plaque where it can shimmer at an angle.
-  material.bumpMap = null;
-  material.normalMap = null;
-  material.displacementMap = null;
-  material.roughnessMap = null;
-  material.roughness = 0.82;
-  material.metalness = 0;
-  material.needsUpdate = true;
-  return material;
+
+  return sample.material.clone();
 }
 const MAHOGANY_PLAQUE_MATERIAL = createMahoganyPlaqueMaterial();
 
