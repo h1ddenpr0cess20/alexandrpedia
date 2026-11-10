@@ -153,7 +153,9 @@ const cases = {};
  * Two matching cases share their back panels at the center plane. Wikipedia faces
  * toward the room center; Grokipedia faces the opposite direction.
  */
-function addBackToBackCases(sectionId, bay, width) {
+function addBackToBackCases(sectionId, bay) {
+  // Original Alexandrpedia bookcase dimensions; the new layout changes placement only.
+  const width = 0.8;
   const depth = 0.34;
   const inward = new GFX.Vector3(0, 0, 1).applyAxisAngle(AXIS_Y, bay.turn);
   for (const sourceId of SOURCES_IN_ORDER) {
@@ -163,7 +165,7 @@ function addBackToBackCases(sectionId, bay, width) {
       shelves: 4,
       width,
       depth,
-      height: sectionId === 'ai' ? 2.45 : 2.2,
+      height: 2.2,
       seed: sectionId.length * 31 + (sourceId === 'wikipedia' ? 3 : 7),
     });
     shelf.group.position.set(
@@ -177,9 +179,9 @@ function addBackToBackCases(sectionId, bay, width) {
   }
 }
 
-addBackToBackCases('ai', AI_BAY, 2.35);
+addBackToBackCases('ai', AI_BAY);
 for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
-  addBackToBackCases(sectionId, bay, sectionId === 'entertainment' ? 2.2 : 1.7);
+  addBackToBackCases(sectionId, bay);
 }
 
 /** A framed two-sided brass title plaque, painted once and shown legibly from either side. */
