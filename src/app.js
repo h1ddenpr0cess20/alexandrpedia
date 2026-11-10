@@ -17,7 +17,7 @@ import { createBook } from '../vendor/madness-engine/src/props/book.js';
 import { createHuman, FIGURES } from '../vendor/madness-engine/src/people/index.js';
 import { createWoodTable } from '../vendor/madness-engine/src/props/wood-table.js';
 import { createWoodChair } from '../vendor/madness-engine/src/props/wood-chair.js';
-import { createPersianRug } from './rug.js';
+import { createPersianRug } from '../vendor/madness-engine/src/props/rug.js';
 import { CATALOG, keyOf } from './catalog.js';
 import { SOURCES } from './sources.js';
 import { loadArticle, MAX_PAGES, pageCountForBook } from './library.js';
