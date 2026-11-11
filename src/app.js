@@ -457,14 +457,10 @@ const BOOK_PAGE_WIDTH = 0.30;
 const BOOK_BASE_HEIGHT = 0.42;
 const BOOK_LEAF_PITCH = 0.0006;
 
-// The committed articles average about 32 printed pages (median 31; most between 10 and 52), and every book
-// gets four blank pages at the back: a shelf copy has that many blank pages, so it is as thick as a typical book.
-const SHELF_PAGE_COUNT = pageCountForBook(32);
-
 const SECTION_CATALOGS = catalogsForSections(CATALOG);
 const missingSnapshots = [];
 
-// The shelves are built from titles alone (data/manifest.json, written by npm run build-manifest). A book on a
+// The shelves are built from titles and page counts alone (data/manifest.json, written by npm run build-manifest). A book on a
 // shelf is a whole book with blank placeholder pages; its article is fetched only when it is opened.
 const MANIFEST = await (await fetch(new URL('../data/manifest.json', import.meta.url))).json();
 
@@ -480,11 +476,11 @@ for (const [sectionId, catalog] of Object.entries(SECTION_CATALOGS)) {
     });
     const stock = stockBooks(available.length, sectionId.length + (sourceId === 'wikipedia' ? 11 : 17));
     const prepared = available.map((entry, index) => {
-      const title = titles[entry.title];
+      const { title, pages } = titles[entry.title];
       const originalSize = stock[index].size;
       const bookOptions = {
         ...stock[index],
-        pageCount: SHELF_PAGE_COUNT, // blank placeholder pages, as thick as an average article's book
+        pageCount: pageCountForBook(pages), // blank pages, as many as its article will fill: its real thickness
         title,
         subtitle: `${source.name} · ${entry.shelf ?? entry.kind}`,
         print: source.print,
