@@ -740,7 +740,8 @@ const moving = new Set(); // books that are opening or closing
 
 // The open book travels with you: it stays at the point you look at as you move.
 function holdBook(book) {
-  book.group.position.copy(GOAL); // where the view is headed: the table at first, then wherever you move
+  // Where you are looking, pulled back toward you if a shelf, wall or table is in the way.
+  book.group.position.copy(clearSpot(GOAL));
 }
 
 function takeDown(record) {
@@ -757,7 +758,7 @@ function takeDown(record) {
   moving.add(record);
   // Open it right where you stand: straight ahead, at your current viewing distance. If a shelf
   // or wall is nearer than that, it stops short of it instead of opening inside it.
-  const spot = openingSpot();
+  const spot = openingSpot().clone();
   focusOn(spot);
   stage.target.copy(spot);
   stage.view.zoomBy(camera.position.distanceTo(spot) / LENS_DISTANCE / stage.view.aim.zoom);
@@ -765,18 +766,27 @@ function takeDown(record) {
 }
 
 const LENS_DISTANCE = 7.5; // the stage's lens distance
-const BOOK_CLEARANCE = 0.4; // metres kept between the open book and anything behind it
+const BOOK_CLEARANCE = 0.55; // metres kept between the open book and anything behind it: half its open width, and some
 const AHEAD = new GFX.Vector3();
 const blocker = new GFX.Raycaster();
-function openingSpot() {
+function openingSpot() { return clearSpot(stage.target); }
+
+/** The point toward `goal` from your eyes, stopped BOOK_CLEARANCE short of anything in the way. */
+function clearSpot(goal) {
   camera.updateMatrixWorld();
-  AHEAD.copy(stage.target).sub(camera.position);
+  AHEAD.copy(goal).sub(camera.position);
   let distance = AHEAD.length();
   AHEAD.normalize();
   blocker.set(camera.position, AHEAD);
-  const hit = blocker.intersectObjects(scene.children, true).find((h) => !byGroup.has(h.object) && h.distance > 0.05);
+  blocker.far = distance + BOOK_CLEARANCE;
+  const hit = blocker.intersectObjects(scene.children, true).find((h) => !insideOpenBook(h.object) && h.distance > 0.05);
   if (hit && hit.distance - BOOK_CLEARANCE < distance) distance = Math.max(0.5, hit.distance - BOOK_CLEARANCE);
-  return camera.position.clone().addScaledVector(AHEAD, distance);
+  return SPOT.copy(camera.position).addScaledVector(AHEAD, distance);
+}
+const SPOT = new GFX.Vector3();
+function insideOpenBook(node) {
+  for (let n = node; n; n = n.parent) if (reading && n === reading.book.group) return true;
+  return false;
 }
 
 function putBack(record) {
@@ -833,7 +843,12 @@ const AXIS_X = new GFX.Vector3(1, 0, 0);
 const SPIN = new GFX.Quaternion();
 const RIGHT = new GFX.Vector3();
 const UP = new GFX.Vector3();
-const PAN_LIMIT = ROOM_HALF; // far enough to walk up to the shelves on every wall
+// You can walk anywhere inside the walls, right up to the shelves on every side (and into the corners).
+const WALK_EDGE = ROOM_HALF - 0.3;
+function keepInRoom() {
+  panned.x = Math.min(WALK_EDGE, Math.max(-WALK_EDGE, focus.x + panned.x)) - focus.x;
+  panned.z = Math.min(WALK_EDGE, Math.max(-WALK_EDGE, focus.z + panned.z)) - focus.z;
+}
 const ORBIT_SPEED = 0.006;
 
 /** Slide the view sideways and up the screen by pixels, in proportion to how far the camera stands from what it looks at. */
@@ -843,7 +858,7 @@ function pan(dx, dy) {
   UP.setFromMatrixColumn(camera.matrixWorld, 1);
   const perPixel = (2 * Math.tan((camera.fov * Math.PI) / 360) * camera.position.distanceTo(stage.target)) / canvas.clientHeight;
   panned.addScaledVector(RIGHT, -dx * perPixel).addScaledVector(UP, dy * perPixel);
-  panned.clampLength(0, PAN_LIMIT);
+  keepInRoom();
 }
 
 function resetView() {
@@ -910,7 +925,12 @@ canvas.addEventListener('pointermove', (e) => {
     // Turn the book about the screen's axes: it rotates freely, through any angle.
     SPIN.setFromAxisAngle(AXIS_Y, dx * 0.01);
     reading.book.group.quaternion.premultiply(SPIN);
-    SPIN.setFromAxisAngle(AXIS_X, dy * 0.01);
+    // Tip it about the screen's horizontal, so dragging works the same whichever way you face.
+    camera.updateMatrixWorld();
+    RIGHT.setFromMatrixColumn(camera.matrixWorld, 0);
+    RIGHT.y = 0;
+    RIGHT.normalize();
+    SPIN.setFromAxisAngle(RIGHT, dy * 0.01);
     reading.book.group.quaternion.premultiply(SPIN);
   }
 });
@@ -945,6 +965,8 @@ canvas.addEventListener('dblclick', (e) => { if (!pick(e)) resetView(); });
 
 // Keyboard: W/A/S/D or the arrow keys slide the view across the room. While a book is open the arrows turn its pages instead.
 const heldKeys = new Set();
+let fast = false; // Shift held: move three times as fast
+const FAST_MOVE = 3;
 const MOVE = { w: [0, 1], s: [0, -1], a: [-1, 0], d: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
 const keyName = (e) => (e.key.length === 1 ? e.key.toLowerCase() : e.key);
 /** How far the keys ask to go, right and up on the screen: [right, up], each -1 to 1. */
@@ -959,6 +981,7 @@ function keyMove() {
 }
 globalThis.addEventListener('keydown', (e) => {
   const key = keyName(e);
+  fast = e.shiftKey;
   if (MOVE[key] && !(reading && key.startsWith('Arrow'))) heldKeys.add(key);
   if (e.key === 'r' || e.key === 'R' || e.key === 'Home') { resetView(); return; }
   if (!reading) return;
@@ -966,8 +989,8 @@ globalThis.addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowLeft') { reading.book.prev(); e.preventDefault(); }
   else if (e.key === 'Escape') { putBack(reading); }
 });
-globalThis.addEventListener('keyup', (e) => heldKeys.delete(keyName(e)));
-globalThis.addEventListener('blur', () => heldKeys.clear());
+globalThis.addEventListener('keyup', (e) => { heldKeys.delete(keyName(e)); fast = e.shiftKey; });
+globalThis.addEventListener('blur', () => { heldKeys.clear(); fast = false; });
 
 // ———————————————————————————————————————————— the frame loop
 
@@ -1007,10 +1030,10 @@ renderer.setAnimationLoop((now) => {
   const [right, up] = keyMove();
   if (right || up) {
     const axes = groundAxes(stage.view.yaw);
-    const step = 2.0 * stage.view.zoom * dt;
+    const step = 2.0 * stage.view.zoom * dt * (fast ? FAST_MOVE : 1);
     panned.x += (axes.right[0] * right + axes.up[0] * up) * step;
     panned.z += (axes.right[1] * right + axes.up[1] * up) * step;
-    panned.clampLength(0, PAN_LIMIT);
+    keepInRoom();
     dirty = true;
   }
   GOAL.copy(focus).add(panned);
