@@ -888,18 +888,80 @@ canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 const raycaster = new GFX.Raycaster();
 const NDC = new GFX.Vector2();
 
+// Picking has to be quick: it runs on every click. Ray-testing the whole scene meant every page of every
+// shelf book (thousands of meshes), which blocked the page for hundreds of milliseconds. Instead, the open
+// book is tested exactly (its pages need the point that was hit), and shelf books by their boxes, which do
+// not move while they are shelved; a shelf, wall or table in front of a book still hides it.
+const shelfBoxes = new Map(); // record -> its shelved book's own box, and how to turn a world ray into its frame
+function shelfBox(record) {
+  let entry = shelfBoxes.get(record);
+  if (!entry) {
+    const { group, dimensions } = record.shelfBook;
+    group.updateMatrixWorld(true);
+    const { min, max } = dimensions.closed;
+    entry = {
+      // Fitted to the shut book and turned with it, trimmed a little through its thickness and at the spine (it is
+      // rounded, half the book's thickness across): neighbours stand close, so an untrimmed box takes the next one's edge.
+      box: new GFX.Box3(
+        new GFX.Vector3(min[0], min[1] + (max[1] - min[1]) * BOX_TRIM, min[2]),
+        new GFX.Vector3(max[0] - (max[1] - min[1]) / 2, max[1] - (max[1] - min[1]) * BOX_TRIM, max[2]),
+      ),
+      toLocal: group.matrixWorld.clone().invert(),
+      toWorld: group.matrixWorld.clone(),
+    };
+    shelfBoxes.set(record, entry);
+  }
+  return entry;
+}
+const BOX_TRIM = 0; // the exact cover test below settles which of neighbouring books was hit
+const CANDIDATE_REACH = 0.08; // metres past the nearest box that a book is still tested exactly
+const LOCAL_RAY = new GFX.Ray();
+const BOX_HIT = new GFX.Vector3();
+const AHEAD_POINT = new GFX.Vector3();
+
+/** Where a world ray first meets a shelved book (in the world), or null. */
+function hitShelfBook(record, ray) {
+  const { box, toLocal, toWorld } = shelfBox(record);
+  LOCAL_RAY.origin.copy(ray.origin).applyMatrix4(toLocal);
+  AHEAD_POINT.copy(ray.origin).add(ray.direction).applyMatrix4(toLocal);
+  LOCAL_RAY.direction.copy(AHEAD_POINT).sub(LOCAL_RAY.origin).normalize();
+  if (!LOCAL_RAY.intersectBox(box, BOX_HIT)) return null;
+  return BOX_HIT.applyMatrix4(toWorld);
+}
+
 /** The book (and the hit) under a pointer event, or null. */
 function pick(e) {
   const rect = canvas.getBoundingClientRect();
   NDC.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
   camera.updateMatrixWorld();
   raycaster.setFromCamera(NDC, camera);
-  for (const hit of raycaster.intersectObjects(scene.children, true)) {
-    let node = hit.object;
-    while (node && !byGroup.has(node)) node = node.parent;
-    if (node) return { record: byGroup.get(node), hit };
+  const ray = raycaster.ray;
+  if (reading) {
+    const hit = raycaster.intersectObject(reading.book.group, true)[0];
+    if (hit) return { record: reading, hit };
   }
-  return null;
+  // The boxes narrow it to the few books nearest along the ray; their covers are then tested exactly.
+  const near = [];
+  for (const record of books.values()) {
+    if (record === reading) continue;
+    const point = hitShelfBook(record, ray);
+    if (point) near.push({ record, hit: { point: point.clone(), distance: point.distanceTo(ray.origin) } });
+  }
+  if (!near.length) return null;
+  near.sort((p, q) => p.hit.distance - q.hit.distance);
+  const closest = near.filter((c) => c.hit.distance < near[0].hit.distance + CANDIDATE_REACH);
+  let best = null;
+  for (const candidate of closest) {
+    const cover = candidate.record.shelfBook.group.getObjectByName('book_cover');
+    const exact = cover && raycaster.intersectObject(cover, false)[0];
+    if (exact && (!best || exact.distance < best.hit.distance)) best = { record: candidate.record, hit: exact };
+  }
+  best ??= near[0];
+  const nearest = best.hit.distance;
+  // Hidden behind a shelf, wall or table: not that book.
+  const blocker = raycaster.intersectObjects(obstacles(), false)[0];
+  if (blocker && blocker.distance < nearest - 0.05) return null;
+  return best;
 }
 
 
