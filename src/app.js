@@ -750,7 +750,8 @@ function takeDown(record) {
   shelfCulling(book, false);
   home.parent.remove(book.group);
   scene.add(book.group);
-  book.group.quaternion.copy(READ_UPRIGHT);
+  // Upright with its pages toward you, whichever way you are facing.
+  book.group.quaternion.setFromAxisAngle(AXIS_Y, stage.view.aim.yaw).multiply(READ_UPRIGHT);
   book.group.scale.setScalar(1);
   reading = record;
   moving.add(record);
@@ -832,7 +833,7 @@ const AXIS_X = new GFX.Vector3(1, 0, 0);
 const SPIN = new GFX.Quaternion();
 const RIGHT = new GFX.Vector3();
 const UP = new GFX.Vector3();
-const PAN_LIMIT = 5;
+const PAN_LIMIT = ROOM_HALF; // far enough to walk up to the shelves on every wall
 const ORBIT_SPEED = 0.006;
 
 /** Slide the view sideways and up the screen by pixels, in proportion to how far the camera stands from what it looks at. */
