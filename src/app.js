@@ -13,7 +13,7 @@ import { createStage } from 'madness-engine/stage';
 import { paintRoom } from 'madness-engine/textures/rooms/studio';
 import { defineView } from 'madness-engine/view';
 import { createBookcase, stockBooks } from 'madness-engine/props/bookcase';
-import { createBook } from 'madness-engine/props/book';
+import { createBook, PAPERS } from 'madness-engine/props/book';
 import { createHuman, FIGURES } from 'madness-engine/people';
 import { createWoodTable } from 'madness-engine/props/wood-table';
 import { createWoodChair } from 'madness-engine/props/wood-chair';
@@ -25,6 +25,10 @@ import { SOURCES } from './sources.js';
 import { loadArticle, MAX_PAGES, pageCountForBook } from './library.js';
 import { flowPages } from 'madness-engine/props/book-art';
 import { shelveBooksByPriority } from './shelving.js';
+import { pageBlockBox } from './page-block.js';
+import { createNavigator } from './walk-paths.js';
+import { readerSeats, walkObstacles } from './room-plan.js';
+import { READER, createReaders } from './readers.js';
 import { catalogsForSections, SECTION_NAMES } from './sections.js';
 import { CENTER_LONG_TABLE_DIMENSIONS, CORNER_READING_TABLE_DIMENSIONS, ORIGINAL_BOOKCASE_DIMENSIONS, WALL_SIGN_FRAME_EXTRA, centerLongTableChairs, centerLongTablePlacement, cornerReadingNookPlacement, TABLE_HEIGHT, wallCasePlacement, wallReadingNookPlacement } from './room-layout.js';
 
@@ -72,7 +76,8 @@ globalThis.addEventListener('error', (e) => { if (!loading.classList.contains('d
 globalThis.addEventListener('unhandledrejection', (e) => { if (!loading.classList.contains('done')) loadingFailed(e.reason); });
 
 const status = document.getElementById('status');
-const say = (text = '') => { status.textContent = text; status.hidden = !text; };
+/** The line of news at the top. `busy` adds a bar that keeps moving even while the page is working too hard to redraw. */
+const say = (text = '', busy = false) => { status.textContent = text; status.hidden = !text; status.classList.toggle('busy', busy && !!text); };
 
 // Quality presets. High is the full look; Medium and Low draw fewer pixels and cheaper shadows.
 // The choice is remembered in this browser and takes effect on reload (the renderer is built once).
@@ -457,11 +462,27 @@ const BOOK_PAGE_WIDTH = 0.30;
 const BOOK_BASE_HEIGHT = 0.42;
 const BOOK_LEAF_PITCH = 0.0006;
 
+// A shelved book is its cover and one block of paper between the boards (see page-block.js for why): every
+// block shares one geometry and one material.
+const PAGE_BLOCK = {
+  geometry: new GFX.BoxGeometry(1, 1, 1),
+  material: new GFX.MeshStandardMaterial({ name: 'shelf_paper_block', color: '#d9caa9', roughness: 0.92, metalness: 0 }),
+};
+function addPageBlock(book) {
+  const { min, max } = pageBlockBox(book.dimensions.closed);
+  const block = new GFX.Mesh(PAGE_BLOCK.geometry, PAGE_BLOCK.material);
+  block.name = 'book_page_block';
+  block.position.set(...min.map((v, k) => (v + max[k]) / 2));
+  block.scale.set(...max.map((v, k) => v - min[k]));
+  block.castShadow = block.receiveShadow = true;
+  book.group.add(block);
+}
+
 const SECTION_CATALOGS = catalogsForSections(CATALOG);
 const missingSnapshots = [];
 
 // The shelves are built from titles and page counts alone (data/manifest.json, written by npm run build-manifest). A book on a
-// shelf is a whole book with blank placeholder pages; its article is fetched only when it is opened.
+// shelf is a cover as thick as its article will be; its article is fetched only when it is opened.
 const MANIFEST = await (await fetch(new URL('../data/manifest.json', import.meta.url))).json();
 
 for (const [sectionId, catalog] of Object.entries(SECTION_CATALOGS)) {
@@ -492,8 +513,10 @@ for (const [sectionId, catalog] of Object.entries(SECTION_CATALOGS)) {
         textureSize: 512,
         bump: false,
       };
-      // A whole book with blank pages: its words are written only once it is pulled from the shelf (see select).
-      const book = createBook(GFX, { ...bookOptions, size: BOOK_SCALE });
+      // The cover at the thickness of its article, with a block of paper in it: the words are written, and the
+      // leaves built, only once it is pulled from the shelf (see select).
+      const book = createBook(GFX, { ...bookOptions, size: BOOK_SCALE, shell: true });
+      addPageBlock(book);
       const record = {
         entry, source, title, book, shelfBook: book, bookOptions,
         key: `${sectionId}:${sourceId}:${keyOf(entry)}`,
@@ -570,7 +593,7 @@ function freezeStatic(node) {
 scene.updateMatrixWorld(true);
 for (const child of scene.children) freezeStatic(child);
 
-// ———————————————————————————————————————————— people reading in the corners
+// ———————————————————————————————————————————— readers: people who come in, take books down and read them
 
 const READER_SHIRTS = ['#5b6b7a', '#7a4e3a', '#3f5e4c', '#8a6d3b', '#a04b3f', '#d8cbb5', '#2e3a4a'];
 const SKIN_TONES = ['#f6dccb', '#ecc3a4', '#dba982', '#c68a5e', '#a86b45', '#8a5636', '#5f3b26', '#432a1c'];
@@ -599,162 +622,268 @@ function randomLook(sex) {
   return look;
 }
 
-const READER_SEATS = CORNER_NOOKS.flatMap((corner, cornerIndex) => {
-  const nook = cornerReadingNookPlacement({ roomHalf: ROOM_HALF, cornerX: corner.cornerX, cornerZ: corner.cornerZ });
-  return nook.chairs.map((spot, chairIndex) => ({ key: `${cornerIndex}:${chairIndex}`, spot }));
-});
+const READER_SEATS = readerSeats({ roomHalf: ROOM_HALF });
 const MIN_READERS = 1;
 const MAX_READERS = 4;
-const WALK_SPEED = 1.0; // metres a second
+const READER_REACH = 0.36;            // how far in front of a bookcase's face a reader stands to reach a book
+const REACHABLE = Object.freeze([0.5, 1.95]); // the heights of books a standing reader takes (not the bottom shelf, not above their reach)
 const titles = [...books.values()];
+const clampTo = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
-/** Where every reader comes in and leaves: just inside the glass doors. */
-function entranceFor() { return ENTRY_POINT; }
-// The figures are built once, half men and half women, and reused: building a figure takes seconds,
-// so they are only built the first time people are switched on.
-const figures = [];
-const nextFrame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
-async function buildFigures() {
-  // One figure per frame, so switching people on never freezes the page for seconds.
-  for (const sex of ['male', 'male', 'female', 'female'].slice(figures.length)) {
-    await nextFrame();
-    if (!peopleOn) return;
-    const man = createHuman(GFX, { sex, detail: 0.5 });
-    const joint = FIGURES[sex].joints.ball;
-    man.pose({ clip: 'idle', t: 0, time: 0 });
-    const standingSole = man.point('footL', joint)[1];
-    man.pose({ clip: 'read', t: 1, time: 0 });
-    const seatedSole = man.point('footL', joint)[1];
-    // Each figure gets its look, and its own book to carry, once: restyling a figure takes seconds,
-    // so doing it each time someone walks in froze the page. Arrivals only change the shirt.
-    man.customize(randomLook(sex));
-    // The engine's own Book of Madness, made as the asset viewer makes it to hold, so the hands grip it as they do there.
-    const copy = createBook(GFX, { size: 0.45, pageCount: 60 });
-    figures.push({ man, sex, copy, lift: standingSole - seatedSole, inUse: false });
+// Readers walk round the shelves, tables and chairs, not through them (see walk-paths.js). The floor plan is
+// cut into squares the first time anyone walks, so a room with no people in it pays nothing for it.
+let walkways = null;
+const walkable = {
+  path(from, to) {
+    walkways ??= createNavigator({
+      half: ROOM_HALF,
+      obstacles: walkObstacles({
+        roomHalf: ROOM_HALF,
+        cases: Object.values(cases).map((shelf) => ({ x: shelf.group.position.x, z: shelf.group.position.z, rotation: shelf.group.rotation.y })),
+      }),
+    });
+    return walkways.path(from, to);
+  },
+};
+
+// ——— the books they take
+
+/** Books a reader has taken off the shelf (their shelf copy is out of sight until it goes back). */
+const borrowed = new Set();
+/** Books a reader is on the way to, so that two do not go for the same one. */
+const reserved = new Set();
+/** Books a reader left the room with, to be back on the shelf a while later: { record, at } (seconds). */
+const returning = [];
+
+/** Where a book stands on its shelf and where to stand to take it, or null if it is not on a shelf. */
+const spots = new Map();
+function spotOf(record) {
+  if (spots.has(record)) return spots.get(record);
+  const shelfKey = `${record.sectionId}:${record.source.id}`;
+  const shelf = cases[shelfKey];
+  let spot = null;
+  // (A book that did not fit on the shelves has no place on one.)
+  if (shelf && record.shelfBook.group.parent === record.home.parent) {
+    const world = record.home.parent.localToWorld(record.home.position.clone());
+    const front = caseFront(shelf);
+    const into = (world.x - shelf.group.position.x) * front.x + (world.z - shelf.group.position.z) * front.z;
+    const out = ORIGINAL_BOOKCASE_DIMENSIONS.depth / 2 + READER_REACH - into;
+    spot = {
+      record, caseKey: shelfKey, y: world.y,
+      stand: { x: world.x + front.x * out, z: world.z + front.z * out },
+      face: Math.atan2(-front.x, -front.z), // toward the books
+    };
   }
+  spots.set(record, spot);
+  return spot;
 }
 
-/** A figure in motion or seated: its seat, where it came in from, and the copy of the book it holds. */
-const readers = new Map(); // seat key -> reader
-function createReader(seat, record) {
-  const sexes = [...new Set(figures.filter((f) => !f.inUse).map((f) => f.sex))];
-  const sex = choose(sexes);
-  const slot = choose(figures.filter((f) => !f.inUse && f.sex === sex));
-  slot.inUse = true;
-  const { man, copy } = slot;
-  man.setShirtColor(choose(READER_SHIRTS));
-  holdCopy(man, copy, false);
-  man.group.name = `${sex} reader`;
-  scene.add(man.group);
-  const reader = {
-    key: seat.key, seat: seat.spot, entrance: entranceFor(seat.spot), slot, copy,
-    phase: 'in', t0: performance.now() / 1000,
-  };
-  readers.set(seat.key, reader);
-  return reader;
+function reachable(record) {
+  const spot = spotOf(record);
+  return !!spot && spot.y >= REACHABLE[0] && spot.y <= REACHABLE[1]
+    && record.shelfBook.group.visible && !borrowed.has(record) && !reserved.has(record) && record !== reading;
+}
+
+let booksByCase = null;
+/** A book for a reader to take: most often from the case they are already at (`near`), otherwise any. */
+function chooseBook({ near } = {}) {
+  if (near && !booksByCase) {
+    booksByCase = new Map();
+    for (const record of titles) {
+      const spot = spotOf(record);
+      if (spot) booksByCase.set(spot.caseKey, [...(booksByCase.get(spot.caseKey) ?? []), record]);
+    }
+  }
+  for (const pool of near && Math.random() < READER.sameCase ? [booksByCase.get(near.caseKey), titles] : [titles]) {
+    for (let tries = 0; tries < 80; tries++) {
+      const record = choose(pool);
+      if (!reachable(record)) continue;
+      reserved.add(record);
+      return spotOf(record);
+    }
+  }
+  return null;
+}
+
+/** How a book on the shelf looks on the cover, for the copy a reader carries. */
+const COVER_STYLE = ['title', 'subtitle', 'cloth', 'foil', 'emblem', 'trim', 'drips'];
+const coverStyleOf = (record) => Object.fromEntries(COVER_STYLE.map((key) => [key, record.bookOptions[key]]));
+
+/** A book a reader left the room with comes back a minute or two later, put back on its shelf unseen. */
+function lend(record, now) {
+  returning.push({ record, at: now + 60 + Math.random() * 90 });
+}
+function bringBack(record) {
+  borrowed.delete(record);
+  if (record !== reading) record.shelfBook.group.visible = true;
+}
+function returnBooks(now, all = false) {
+  for (let i = returning.length - 1; i >= 0; i--) {
+    if (!all && returning[i].at > now) continue;
+    bringBack(returning[i].record);
+    returning.splice(i, 1);
+  }
+  if (all) { for (const record of [...borrowed]) bringBack(record); reserved.clear(); }
+}
+
+// ——— the figures
+
+// The figures are built once, a man and a woman and again, and reused: the first of each takes seconds (the
+// engine makes the body, the clothes and their cloth once, and shares them), the later ones a tenth of a second.
+// Each is made in the look it keeps, so that its skin and hair are painted once: restyling a figure after the
+// fact paints them again, and every such repaint was more seconds with the page frozen.
+const FIGURE_SEXES = ['male', 'female', 'male', 'female'];
+const figures = [];
+const nextFrame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+
+/** The arm that reaches for a book: swung forward until the hand is as high as the book, leaning down for a low one. */
+const SHOULDER_HEIGHT = 1.4, ARM_LENGTH = 0.62;
+function reachArm(k, state) {
+  const up = state.reach ?? 0;
+  if (!up) return;
+  const y = state.reachY ?? 1.2;
+  const swing = clampTo(Math.acos(clampTo((SHOULDER_HEIGHT - y) / ARM_LENGTH, -1, 1)), 0.35, 2.3);
+  k.turn('armR', -swing * up, 0, -0.1 * up);
+  k.turn('foreR', -0.3 * up, 0, 0);
+  k.turn('spine', 0.5 * clampTo((1.0 - y) / 0.6, 0, 1) * up, 0, 0);
+}
+
+function buildFigure(sex) {
+  const man = createHuman(GFX, { sex, detail: 0.5, features: randomLook(sex) });
+  man.setStyle({ after: reachArm });
+  const joint = FIGURES[sex].joints.ball;
+  man.pose({ clip: 'idle', t: 0, time: 0 });
+  const standingSole = man.point('footL', joint)[1];
+  man.pose({ clip: 'read', t: 1, time: 0 });
+  const seatedSole = man.point('footL', joint)[1];
+  // The book they carry: the engine's own, as the asset viewer makes it to hold, so the hands grip it as they do there.
+  // Its cover is painted small and flat: it is a book in a hand, and its cover is made over (see `take`) each time.
+  const copy = createBook(GFX, { size: 0.45, pageCount: 40, textureSize: 512, bump: false, deferPages: true, bookplate: false });
+  return { man, sex, copy, lift: standingSole - seatedSole, inUse: false };
+}
+
+let building = null;
+/** Builds the figures that are not built yet, a frame apart, so the page can show what it is doing between them. */
+function ensureFigures() {
+  building ??= (async () => {
+    try {
+      while (figures.length < FIGURE_SEXES.length) {
+        say(`Bringing in the readers… ${figures.length + 1} of ${FIGURE_SEXES.length}`, true);
+        await nextFrame();
+        if (!peopleOn) return;
+        figures.push(buildFigure(FIGURE_SEXES[figures.length]));
+      }
+    } finally {
+      building = null;
+    }
+  })();
+  return building;
 }
 
 /** Puts a book in a figure's hands, shut while walking and open to read. Any book they held is let go first. */
 function holdCopy(man, copy, open) {
-  if (man.held('R')) man.release('R');
-  if (man.held('L')) man.release('L');
+  handsFree(man);
   man.hold(copy, { how: 'book', open });
 }
-
-/** Walks a reader one step along the path for this frame; sits them down or removes them at the end. */
-function walkReader(reader, now) {
-  const inbound = reader.phase === 'in';
-  const from = inbound ? reader.entrance : reader.seat;
-  const to = inbound ? reader.seat : reader.entrance;
-  const dx = to.x - from.x, dz = to.z - from.z;
-  const length = Math.hypot(dx, dz);
-  const elapsed = now - reader.t0;
-  const along = Math.min(1, elapsed * WALK_SPEED / length);
-  const { man, lift } = reader.slot;
-  const { group } = man;
-  group.position.set(from.x + dx * along, 0, from.z + dz * along);
-  group.rotation.y = Math.atan2(dx, dz);
-  // Re-pose at most 30 times a second: posing a figure is costly, and the eye can't tell at walking pace.
-  if (!(now - (reader.posed ?? -1) < 1 / 30)) { man.pose({ clip: 'walk', t: elapsed, time: now, speed: 1 }); reader.posed = now; }
-  if (along < 1) return true;
-
-  if (inbound) {
-    reader.phase = 'sit';
-    group.position.set(reader.seat.x, lift, reader.seat.z);
-    group.rotation.y = reader.seat.rotationY;
-    holdCopy(man, reader.copy, true);
-    man.pose({ clip: 'read', t: 1, time: 0 });
-    return false;
-  }
-  // Out of the room: the figure, and the book it carries, are put away for the next reader.
-  scene.remove(group);
-  reader.slot.inUse = false;
-  readers.delete(reader.key);
-  return false;
+function handsFree(man) {
+  if (man.held('R')) man.release('R');
+  if (man.held('L')) man.release('L');
 }
 
-/** Walks the readers who are on their way in or out. Returns whether any still are. */
+/** What the readers ask of the room (see readers.js). */
+const readerHooks = {
+  canSpawn: () => figures.some((figure) => !figure.inUse),
+  enter(reader) {
+    const free = figures.filter((figure) => !figure.inUse);
+    const sex = choose([...new Set(free.map((figure) => figure.sex))]);
+    const slot = choose(free.filter((figure) => figure.sex === sex));
+    slot.inUse = true;
+    reader.slot = slot;
+    slot.man.setShirtColor(choose(READER_SHIRTS));
+    handsFree(slot.man);
+    slot.man.pose({ clip: 'idle', t: 0, time: 0 }); // (not the pose of the last one to sit in it)
+    slot.man.group.name = `${sex} reader`;
+    readerHooks.place(reader);
+    scene.add(slot.man.group);
+  },
+  exit(reader) {
+    const { slot } = reader;
+    if (reader.target) reserved.delete(reader.target.record);
+    if (reader.held) lend(reader.held.record, performance.now() / 1000);
+    handsFree(slot.man);
+    scene.remove(slot.man.group);
+    slot.inUse = false;
+    wake();
+  },
+  place(reader) {
+    const { man, lift } = reader.slot;
+    man.group.position.set(reader.pos.x, lift * reader.sit, reader.pos.z);
+    man.group.rotation.y = reader.yaw;
+  },
+  pose(reader, state) { reader.slot.man.pose(state); },
+  take(reader) {
+    const { record } = reader.target;
+    reserved.delete(record);
+    // Gone by the time they got there: someone has it, or it is open on the table.
+    if (!record.shelfBook.group.visible || borrowed.has(record) || record === reading) return false;
+    record.shelfBook.group.visible = false;
+    borrowed.add(record);
+    const { man, copy } = reader.slot;
+    copy.setStyle(coverStyleOf(record));
+    holdCopy(man, copy, false);
+    return true;
+  },
+  shelve(reader) {
+    bringBack(reader.held.record);
+    handsFree(reader.slot.man);
+  },
+  open(reader) { holdCopy(reader.slot.man, reader.slot.copy, true); },
+  close(reader) { holdCopy(reader.slot.man, reader.slot.copy, false); },
+};
+
+const people = createReaders({ navigator: walkable, door: ENTRY_POINT, seats: READER_SEATS, chooseBook, hooks: readerHooks });
+
+/**
+ * Moves the readers, 30 times a second at most: posing a figure is costly, and walking changes nothing the eye
+ * can see between one and the next. Returns whether the picture has changed.
+ */
+const READER_TICK = 1 / 30;
+let readerClock = 0;
 function animateReaders(now) {
-  let moving = false;
-  for (const reader of [...readers.values()]) {
-    if (reader.phase === 'in' || reader.phase === 'out') moving = walkReader(reader, now) || moving;
-  }
-  return moving;
+  returnBooks(now);
+  if (!people.count || now - readerClock < READER_TICK) return false;
+  readerClock = now;
+  return people.update(now);
 }
 
-function arriveReader() {
-  const free = READER_SEATS.filter((seat) => !readers.has(seat.key));
-  if (free.length && titles.length && figures.some((f) => !f.inUse)) createReader(choose(free), choose(titles));
-  wake();
-}
-
-function departReader() {
-  const seated = [...readers.values()].filter((reader) => reader.phase === 'sit');
-  if (!seated.length) return;
-  const reader = choose(seated);
-  reader.phase = 'out';
-  reader.t0 = performance.now() / 1000;
-  holdCopy(reader.slot.man, reader.copy, false);
-  reader.slot.man.pose({ clip: 'walk', t: 0, time: reader.t0, speed: 1 });
-  reader.slot.man.group.position.set(reader.seat.x, 0, reader.seat.z);
-  wake();
-}
-
-// Readers come and go: every so often one walks in or walks out, between one and four at a time.
-function turnOver() {
-  turnOverTimer = null;
+// Readers come and go: every so often another walks in, if there is room for them, and each leaves in their own time.
+let arrivalTimer = null;
+const clock = () => performance.now() / 1000;
+function arrive() {
+  arrivalTimer = null;
   if (!peopleOn) return;
-  const count = readers.size;
-  if (count <= MIN_READERS) arriveReader();
-  else if (count >= MAX_READERS) departReader();
-  else if (Math.random() < 0.5) arriveReader();
-  else departReader();
-  turnOverTimer = setTimeout(turnOver, 15000 + Math.random() * 30000);
+  if (people.count < MAX_READERS && (people.count < MIN_READERS || Math.random() < 0.6) && people.spawn(clock())) wake();
+  arrivalTimer = setTimeout(arrive, 6000 + Math.random() * 12000);
 }
 
 // People are off by default: they are the heaviest part of the scene. A toggle switches them on.
 let peopleOn = false;
-let turnOverTimer = null;
 async function setPeople(on) {
   peopleOn = on && titles.length > 0;
   peopleToggle.checked = peopleOn;
   if (peopleOn) {
-    if (figures.length < 4) {
-      say('Bringing in the readers…');
-      await buildFigures();
+    if (figures.length < FIGURE_SEXES.length) {
+      await ensureFigures();
       say(reading ? '' : snapshotNotice);
       if (!peopleOn) return;
     }
-    if (!readers.size) { arriveReader(); arriveReader(); }
-    if (!turnOverTimer) turnOverTimer = setTimeout(turnOver, 15000 + Math.random() * 30000);
+    if (!people.count && people.spawn(clock())) setTimeout(() => { if (peopleOn && people.spawn(clock())) wake(); }, 4000);
+    if (!arrivalTimer) arrivalTimer = setTimeout(arrive, 6000 + Math.random() * 12000);
   } else {
-    clearTimeout(turnOverTimer);
-    turnOverTimer = null;
-    for (const reader of [...readers.values()]) {
-      scene.remove(reader.slot.man.group);
-      reader.slot.inUse = false;
-      readers.delete(reader.key);
-    }
+    clearTimeout(arrivalTimer);
+    arrivalTimer = null;
+    people.clear();
+    returnBooks(0, true); // everything they had taken is back where it was
   }
   peopleToggle.checked = peopleOn;
   wake();
@@ -834,7 +963,7 @@ function putBack(record) {
   byGroup.delete(book.group);
   if (book !== shelfBook) disposeBook(book.group);
   record.book = shelfBook;
-  shelfBook.group.visible = true;
+  shelfBook.group.visible = !borrowed.has(record);
   moving.delete(record);
   if (reading === record) reading = null;
   // You stay where you are: the look point stays where you have walked to, not back at the shelves.
@@ -943,7 +1072,7 @@ function pick(e) {
   // The boxes narrow it to the few books nearest along the ray; their covers are then tested exactly.
   const near = [];
   for (const record of books.values()) {
-    if (record === reading) continue;
+    if (record === reading || borrowed.has(record)) continue; // (a book a reader has taken is not on the shelf to be picked)
     const point = hitShelfBook(record, ray);
     if (point) near.push({ record, hit: { point: point.clone(), distance: point.distanceTo(ray.origin) } });
   }
