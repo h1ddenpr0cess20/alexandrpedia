@@ -17,6 +17,8 @@ import { createBook } from '../vendor/madness-engine/src/props/book.js';
 import { createHuman, FIGURES } from '../vendor/madness-engine/src/people/index.js';
 import { createWoodTable } from '../vendor/madness-engine/src/props/wood-table.js';
 import { createWoodChair } from '../vendor/madness-engine/src/props/wood-chair.js';
+import { createTrackLight } from '../vendor/madness-engine/src/props/track-light.js';
+import { createGlassEntry } from '../vendor/madness-engine/src/props/glass-entry.js';
 import { createPersianRug } from '../vendor/madness-engine/src/props/rug.js';
 import { CATALOG, keyOf } from './catalog.js';
 import { SOURCES } from './sources.js';
@@ -205,65 +207,45 @@ for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
 
 // ———————————————————————————————————————————— track lighting over the shelves
 
-// Ceiling track rails over each run of shelves, with one PAR can per bookcase (the engine's light-show
-// can: an iron barrel, wider at the lens), each tilted to aim at its bookcase. The renderer has point
-// lights only (eight at most), so each run gets one warm light just in front of and above its shelves.
-const TRACK_HEIGHT = 3.7;     // the rail, hung below the 4.2 m ceiling line
+// Ceiling track rails over each run of shelves (the engine's props/track-light): one PAR can per bookcase,
+// each aimed at its case, and one warm light per run (the renderer has eight point lights at most), set just
+// in front of and above the shelves so it falls off down them instead of flattening them.
+const TRACK_HEIGHT = 3.9;     // the rail, hung below the 4.2 m ceiling line
 const TRACK_REACH = 1.4;      // how far out from a bookcase's face the rail runs
-const TRACK_WARM = '#ffd8a8'; // a warm halogen white
-const trackIron = new GFX.MeshStandardMaterial({ name: 'track-iron', color: new GFX.Color('#25252b'), roughness: 0.45, metalness: 0.85 });
-const lensGlow = new GFX.MeshBasicMaterial({ color: new GFX.Color(TRACK_WARM), toneMapped: false });
-/** A bookcase's facing (its front, toward the room), from where it stands and how it is turned. */
+const CAN_SPACING = ORIGINAL_BOOKCASE_DIMENSIONS.width + 0.06; // one can over each case
+
+/** A bookcase's facing (its front, toward the room), from how it is turned. */
 function caseFront(shelf) {
   const r = shelf.group.rotation.y;
   return new GFX.Vector3(Math.sin(r), 0, Math.cos(r));
 }
 
-/** A PAR can at `lens`, its lens end turned to face `target`. */
-function parCan(lens, target) {
-  const g = new GFX.Group();
-  g.name = 'track PAR can';
-  const can = new GFX.Mesh(new GFX.CylinderGeometry(0.12, 0.16, 0.3, 14), trackIron);
-  can.quaternion.setFromUnitVectors(new GFX.Vector3(0, -1, 0), target.clone().sub(lens).normalize());
-  const lensMesh = new GFX.Mesh(new GFX.CircleGeometry(0.14, 14), lensGlow);
-  lensMesh.position.set(0, -0.16, 0);
-  lensMesh.rotation.x = Math.PI / 2;
-  can.add(lensMesh);
-  // The yoke: a short stem up to the rail.
-  const stem = new GFX.Mesh(new GFX.CylinderGeometry(0.015, 0.015, 0.22, 6), trackIron);
-  stem.position.y = 0.2;
-  g.add(can, stem);
-  g.position.copy(lens);
-  return g;
-}
-
-/** One run of shelves (cases standing side by side, facing the same way): its rail, cans and light. */
+/** One run of shelves (cases standing side by side, facing the same way): its track, cans and light. */
 function lightRun(name, shelves) {
   const front = caseFront(shelves[0]);
-  const along = new GFX.Vector3(front.z, 0, -front.x);
   const middle = new GFX.Vector3();
   for (const shelf of shelves) middle.add(shelf.group.position);
   middle.divideScalar(shelves.length);
   const faceOut = ORIGINAL_BOOKCASE_DIMENSIONS.depth / 2;
-  const railAt = middle.clone().addScaledVector(front, faceOut + TRACK_REACH).setY(TRACK_HEIGHT + 0.2);
-  const length = shelves.length * ORIGINAL_BOOKCASE_DIMENSIONS.width + 0.6;
-  const rail = new GFX.Mesh(new GFX.BoxGeometry(length, 0.05, 0.07), trackIron);
-  rail.name = `${name} track rail`;
-  rail.position.copy(railAt);
-  rail.rotation.y = Math.atan2(along.x, along.z) - Math.PI / 2;
-  scene.add(rail);
-  for (const shelf of shelves) {
-    const face = shelf.group.position.clone().addScaledVector(front, faceOut + 0.02);
-    const target = face.clone().setY(ORIGINAL_BOOKCASE_DIMENSIONS.height * 0.55);
-    const lens = shelf.group.position.clone().addScaledVector(front, faceOut + TRACK_REACH).setY(TRACK_HEIGHT);
-    scene.add(parCan(lens, target));
-  }
-  // Close in and high, with a short reach, so the light falls off down the shelves instead of flattening them.
-  const light = new GFX.PointLight(new GFX.Color(TRACK_WARM), 3, 3.2, 2);
-  light.name = `${name} track light`;
-  light.castShadow = false;
-  light.position.copy(middle).addScaledVector(front, faceOut + 0.7).setY(2.5);
-  scene.add(light);
+  const track = createTrackLight(GFX, {
+    cans: shelves.length,
+    length: (shelves.length - 1) * CAN_SPACING + 0.5,
+    drop: 0.2,
+    intensity: 3, reach: 3.2, decay: 2,
+    lightAt: [0, -1.4, -(TRACK_REACH - 0.7)], // 0.7 m out from the shelves, 2.5 m up
+  });
+  track.group.name = `${name} track light`;
+  track.group.position.copy(middle).addScaledVector(front, faceOut + TRACK_REACH).setY(TRACK_HEIGHT);
+  track.group.rotation.y = Math.atan2(front.x, front.z); // the rail runs along the shelves, the light toward them
+  scene.add(track.group);
+  // Each can aims at the middle of the case beneath it. The cans run along the rail in the order the cases do.
+  const along = new GFX.Vector3(front.z, 0, -front.x);
+  const ordered = [...shelves].sort((p, q) => p.group.position.dot(along) - q.group.position.dot(along));
+  track.group.updateMatrixWorld(true);
+  ordered.forEach((shelf, index) => {
+    const target = shelf.group.position.clone().addScaledVector(front, faceOut).setY(ORIGINAL_BOOKCASE_DIMENSIONS.height * 0.55);
+    track.aimCan(index, track.group.worldToLocal(target));
+  });
 }
 
 lightRun('central AI front', [cases['ai:wikipedia']]);
@@ -274,81 +256,14 @@ for (const sectionId of Object.keys(WALL_BAYS)) {
 
 // ———————————————————————————————————————————— the glass entryway
 
-// The east wall is the way in: a glass storefront with double doors, daylight behind it.
-// Readers walk in through the doors and leave the same way.
-const ENTRY_WIDTH = 4.4;
-const ENTRY_HEIGHT = 3.0;
-const ENTRY_DOOR_WIDTH = 1.8;
+// The east wall is the way in: the engine's glass storefront (props/glass-entry), double doors with daylight
+// behind them. Readers walk in through the doors and leave the same way.
 const ENTRY_POINT = Object.freeze({ x: ROOM_HALF - 0.5, z: 0 });
 {
-  const entry = new GFX.Group();
-  entry.name = 'glass entryway';
-  // Daylight beyond the glass: a soft sky-to-pavement gradient, unlit so it reads as outside.
-  const sky = document.createElement('canvas');
-  sky.width = 16; sky.height = 256;
-  const ctx = sky.getContext('2d');
-  const g = ctx.createLinearGradient(0, 0, 0, 256);
-  g.addColorStop(0, '#cfe3f2');
-  g.addColorStop(0.62, '#eef4f7');
-  g.addColorStop(0.66, '#b9b4a8');
-  g.addColorStop(1, '#8f8a80');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 16, 256);
-  const skyTexture = new GFX.CanvasTexture(sky);
-  skyTexture.colorSpace = GFX.SRGBColorSpace;
-  const outside = new GFX.Mesh(new GFX.PlaneGeometry(ENTRY_WIDTH, ENTRY_HEIGHT), new GFX.MeshBasicMaterial({ map: skyTexture }));
-  outside.position.set(0, ENTRY_HEIGHT / 2, -0.012);
-  entry.add(outside);
-
-  const glass = new GFX.MeshStandardMaterial({
-    name: 'entry-glass', color: new GFX.Color('#dfeef5'), roughness: 0.04, metalness: 0.1,
-    transparent: true, opacity: 0.22, depthWrite: false,
-  });
-  const bronze = new GFX.MeshStandardMaterial({ name: 'entry-bronze', color: new GFX.Color('#4a3a2a'), roughness: 0.35, metalness: 0.8 });
-  const pane = (w, h, x, y) => {
-    const m = new GFX.Mesh(new GFX.PlaneGeometry(w, h), glass);
-    m.position.set(x, y, 0);
-    m.renderOrder = 3;
-    entry.add(m);
-  };
-  const bar = (w, h, x, y, depth = 0.08) => {
-    const m = new GFX.Mesh(new GFX.BoxGeometry(w, h, depth), bronze);
-    m.position.set(x, y, 0);
-    m.castShadow = true;
-    entry.add(m);
-  };
-  const side = (ENTRY_WIDTH - ENTRY_DOOR_WIDTH) / 2;
-  const doorTop = 2.35;
-  // Side lights and the transom.
-  pane(side, ENTRY_HEIGHT, -(ENTRY_DOOR_WIDTH + side) / 2, ENTRY_HEIGHT / 2);
-  pane(side, ENTRY_HEIGHT, (ENTRY_DOOR_WIDTH + side) / 2, ENTRY_HEIGHT / 2);
-  pane(ENTRY_DOOR_WIDTH, ENTRY_HEIGHT - doorTop, 0, (ENTRY_HEIGHT + doorTop) / 2);
-  // Two door leaves, each a pane in its own frame, with a long bronze pull.
-  for (const sign of [-1, 1]) {
-    const cx = (sign * ENTRY_DOOR_WIDTH) / 4;
-    pane(ENTRY_DOOR_WIDTH / 2 - 0.08, doorTop - 0.12, cx, doorTop / 2);
-    bar(0.05, doorTop, sign * (ENTRY_DOOR_WIDTH / 2 - 0.025), doorTop / 2, 0.06);
-    bar(0.05, doorTop, sign * 0.025, doorTop / 2, 0.06);
-    bar(ENTRY_DOOR_WIDTH / 2, 0.12, cx, 0.06, 0.06);
-    const pull = new GFX.Mesh(new GFX.CylinderGeometry(0.014, 0.014, 0.9, 10), bronze);
-    pull.position.set(sign * 0.12, 1.05, 0.07);
-    entry.add(pull);
-  }
-  // The storefront frame: head, sill, jambs, the mullions either side of the doors and the transom bar.
-  bar(ENTRY_WIDTH + 0.12, 0.12, 0, ENTRY_HEIGHT);
-  bar(ENTRY_WIDTH + 0.12, 0.04, 0, 0.02);
-  for (const x of [-ENTRY_WIDTH / 2, ENTRY_WIDTH / 2, -ENTRY_DOOR_WIDTH / 2 - 0.03, ENTRY_DOOR_WIDTH / 2 + 0.03]) bar(0.1, ENTRY_HEIGHT, x, ENTRY_HEIGHT / 2);
-  bar(ENTRY_DOOR_WIDTH + 0.12, 0.08, 0, doorTop);
-  // A door mat just inside.
-  const mat = new GFX.Mesh(new GFX.BoxGeometry(ENTRY_DOOR_WIDTH + 0.2, 0.012, 1.0), new GFX.MeshStandardMaterial({ name: 'entry-mat', color: new GFX.Color('#2c2620'), roughness: 0.95 }));
-  mat.position.set(0, 0.006, 0.65);
-  mat.receiveShadow = true;
-  entry.add(mat);
-
-  // Set into the east wall, facing into the room.
-  entry.position.set(ROOM_HALF - 0.02, 0, 0);
-  entry.rotation.y = -Math.PI / 2;
-  scene.add(entry);
+  const entry = createGlassEntry(GFX, { width: 4.4, height: 3.0, doorWidth: 1.8 });
+  entry.group.position.set(ROOM_HALF - 0.02, 0, 0); // set into the east wall, facing into the room
+  entry.group.rotation.y = -Math.PI / 2;
+  scene.add(entry.group);
 }
 
 /** Draw only the gold rules and lettering; the mahogany below stays visible. */
