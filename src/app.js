@@ -462,20 +462,35 @@ const BOOK_PAGE_WIDTH = 0.30;
 const BOOK_BASE_HEIGHT = 0.42;
 const BOOK_LEAF_PITCH = 0.0006;
 
-// A shelved book is its cover and one block of paper between the boards (see page-block.js for why): every
-// block shares one geometry and one material.
-const PAGE_BLOCK = {
-  geometry: new GFX.BoxGeometry(1, 1, 1),
-  material: new GFX.MeshStandardMaterial({ name: 'shelf_paper_block', color: '#d9caa9', roughness: 0.92, metalness: 0 }),
+// A shelved book is its cover and one block of paper between the boards (see page-block.js for why), and its
+// cover is drawn in full only while you are near it: every cover is 13,000 triangles and a texture, and there are
+// 924 of them, but from across the room a spine is a few pixels of its cloth's colour. So a book also has a plain
+// box, in the colour of its cloth, which stands in for it at a distance (see updateShelfLod).
+const SHELF = {
+  box: new GFX.BoxGeometry(1, 1, 1),
+  paper: new GFX.MeshStandardMaterial({ name: 'shelf_paper_block', color: '#d9caa9', roughness: 0.92, metalness: 0 }),
+  cloths: new Map(), // cloth colour -> the material every far book of that cloth shares
 };
-function addPageBlock(book) {
-  const { min, max } = pageBlockBox(book.dimensions.closed);
-  const block = new GFX.Mesh(PAGE_BLOCK.geometry, PAGE_BLOCK.material);
-  block.name = 'book_page_block';
-  block.position.set(...min.map((v, k) => (v + max[k]) / 2));
-  block.scale.set(...max.map((v, k) => v - min[k]));
-  block.castShadow = block.receiveShadow = true;
-  book.group.add(block);
+function clothMaterial(cloth) {
+  if (!SHELF.cloths.has(cloth)) SHELF.cloths.set(cloth, new GFX.MeshStandardMaterial({ name: 'shelf_cloth', color: cloth, roughness: 0.78, metalness: 0 }));
+  return SHELF.cloths.get(cloth);
+}
+function boxMesh(name, { min, max }, material) {
+  const mesh = new GFX.Mesh(SHELF.box, material);
+  mesh.name = name;
+  mesh.position.set(...min.map((v, k) => (v + max[k]) / 2));
+  mesh.scale.set(...max.map((v, k) => v - min[k]));
+  mesh.castShadow = mesh.receiveShadow = true;
+  return mesh;
+}
+/** Gives a shelf book its paper block and its far box; it starts far, with its cover out of sight. */
+function addShelfParts(book, cloth) {
+  const block = boxMesh('book_page_block', pageBlockBox(book.dimensions.closed), SHELF.paper);
+  const far = boxMesh('book_far', book.dimensions.closed, clothMaterial(cloth));
+  block.visible = false;
+  book.cover.mesh.visible = false;
+  book.group.add(block, far);
+  return { block, far };
 }
 
 const SECTION_CATALOGS = catalogsForSections(CATALOG);
@@ -515,10 +530,11 @@ for (const [sectionId, catalog] of Object.entries(SECTION_CATALOGS)) {
       };
       // The cover at the thickness of its article, with a block of paper in it: the words are written, and the
       // leaves built, only once it is pulled from the shelf (see select).
-      const book = createBook(GFX, { ...bookOptions, size: BOOK_SCALE, shell: true });
-      addPageBlock(book);
+      // Its cover is painted small (the engine's 'low') until you come near: see updateShelfLod.
+      const book = createBook(GFX, { ...bookOptions, size: BOOK_SCALE, shell: true, coverDetail: 'low' });
       const record = {
         entry, source, title, book, shelfBook: book, bookOptions,
+        parts: addShelfParts(book, bookOptions.cloth), near: false, center: null,
         key: `${sectionId}:${sourceId}:${keyOf(entry)}`,
         sectionId, home: null,
       };
@@ -593,6 +609,65 @@ function freezeStatic(node) {
 scene.updateMatrixWorld(true);
 for (const child of scene.children) freezeStatic(child);
 
+// ———————————————————————————————————————————— shelf books, near and far
+
+// Books close to you are drawn in full: the cover, with its title and foil painted at full size, and the block of
+// paper in it. The rest are a plain box in the colour of their cloth. A cover painted small costs next to nothing,
+// and one painted full is made when you come near (a few a frame, so nothing stalls) and let go when you go away.
+const NEAR_DISTANCE = 3.0; // metres from the eye
+const FAR_DISTANCE = 3.6;  // a book stays drawn in full until it is this far, so that none flickers at the edge
+const MAX_NEAR = 150;      // drawn in full at once, at most
+const UPGRADES_A_UPDATE = 3;
+const LOD_EVERY = 200;     // milliseconds between looks at which books are near
+let shelved = null;        // the records that stand on a shelf
+let nearCount = 0;
+let lodClock = -Infinity;
+let lodPending = true;
+const LOOK = new GFX.Vector3();
+const TO_BOOK = new GFX.Vector3();
+
+function setNear(record, near) {
+  if (record.near === near) return;
+  record.near = near;
+  nearCount += near ? 1 : -1;
+  record.parts.far.visible = !near;
+  record.parts.block.visible = near;
+  record.shelfBook.cover.mesh.visible = near;
+  record.shelfBook.setCoverDetail(near ? 'full' : 'low');
+}
+
+/** Draws in full the books near the eye (and in front of it), and the rest plain. */
+function updateShelfLod(now) {
+  lodClock = now;
+  if (!shelved) {
+    shelved = [];
+    for (const record of books.values()) {
+      if (record.shelfBook.group.parent !== record.home.parent) continue; // (one that did not fit on a shelf)
+      record.center = record.home.parent.localToWorld(record.home.position.clone());
+      shelved.push(record);
+    }
+  }
+  const eye = camera.position;
+  LOOK.copy(stage.target).sub(eye).normalize();
+  const wanted = [];
+  for (const record of shelved) {
+    TO_BOOK.copy(record.center).sub(eye);
+    const distance = TO_BOOK.length();
+    const ahead = distance > 0 ? TO_BOOK.dot(LOOK) / distance : 1; // 1 straight ahead, -1 behind
+    if (record.near) { if (distance > FAR_DISTANCE || ahead < -0.5) setNear(record, false); }
+    else if (distance < NEAR_DISTANCE && ahead > -0.2) wanted.push([distance, record]);
+  }
+  wanted.sort((p, q) => p[0] - q[0]);
+  let made = 0;
+  for (const [, record] of wanted) {
+    if (made === UPGRADES_A_UPDATE || nearCount >= MAX_NEAR) break;
+    setNear(record, true);
+    made++;
+  }
+  // More to do next time, if some that are wanted are still to be made.
+  lodPending = made < wanted.length && nearCount < MAX_NEAR;
+}
+
 // ———————————————————————————————————————————— readers: people who come in, take books down and read them
 
 const READER_SHIRTS = ['#5b6b7a', '#7a4e3a', '#3f5e4c', '#8a6d3b', '#a04b3f', '#d8cbb5', '#2e3a4a'];
@@ -623,8 +698,8 @@ function randomLook(sex) {
 }
 
 const READER_SEATS = readerSeats({ roomHalf: ROOM_HALF });
-const MIN_READERS = 1;
-const MAX_READERS = 4;
+const MAX_READERS = 6;                // in the room at once, at most (there are sixteen seats); most of the time far fewer
+const MAX_BAKED = 8;                  // people made so far, at most: after that, someone who has been in before comes in again
 const READER_REACH = 0.36;            // how far in front of a bookcase's face a reader stands to reach a book
 const REACHABLE = Object.freeze([0.5, 1.95]); // the heights of books a standing reader takes (not the bottom shelf, not above their reach)
 const titles = [...books.values()];
@@ -705,10 +780,6 @@ function chooseBook({ near } = {}) {
   return null;
 }
 
-/** How a book on the shelf looks on the cover, for the copy a reader carries. */
-const COVER_STYLE = ['title', 'subtitle', 'cloth', 'foil', 'emblem', 'trim', 'drips'];
-const coverStyleOf = (record) => Object.fromEntries(COVER_STYLE.map((key) => [key, record.bookOptions[key]]));
-
 /** A book a reader left the room with comes back a minute or two later, put back on its shelf unseen. */
 function lend(record, now) {
   returning.push({ record, at: now + 60 + Math.random() * 90 });
@@ -728,12 +799,11 @@ function returnBooks(now, all = false) {
 
 // ——— the figures
 
-// The figures are built once, a man and a woman and again, and reused: the first of each takes seconds (the
-// engine makes the body, the clothes and their cloth once, and shares them), the later ones a tenth of a second.
-// Each is made in the look it keeps, so that its skin and hair are painted once: restyling a figure after the
-// fact paints them again, and every such repaint was more seconds with the page frozen.
-const FIGURE_SEXES = ['male', 'female', 'male', 'female'];
-const figures = [];
+// Nobody is made until they walk in. Each reader is a person of random sex and look, made (baked) the moment
+// they arrive, and kept for a later arrival once they have gone: the first ever takes seconds (the engine makes
+// the body, the clothes and their cloth once, and shares them), later ones less. Each is made in the look it
+// keeps, so that its skin and hair are painted once: restyling a figure after the fact paints them again.
+const figures = []; // everyone baked so far; `inUse` while in the room
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
 
 /** The arm that reaches for a book: swung forward until the hand is as high as the book, leaning down for a low one. */
@@ -748,7 +818,7 @@ function reachArm(k, state) {
   k.turn('spine', 0.5 * clampTo((1.0 - y) / 0.6, 0, 1) * up, 0, 0);
 }
 
-function buildFigure(sex) {
+function bakeFigure(sex) {
   const man = createHuman(GFX, { sex, detail: 0.5, features: randomLook(sex) });
   man.setStyle({ after: reachArm });
   const joint = FIGURES[sex].joints.ball;
@@ -756,28 +826,37 @@ function buildFigure(sex) {
   const standingSole = man.point('footL', joint)[1];
   man.pose({ clip: 'read', t: 1, time: 0 });
   const seatedSole = man.point('footL', joint)[1];
-  // The book they carry: the engine's own, as the asset viewer makes it to hold, so the hands grip it as they do there.
-  // Its cover is painted small and flat: it is a book in a hand, and its cover is made over (see `take`) each time.
-  const copy = createBook(GFX, { size: 0.45, pageCount: 40, textureSize: 512, bump: false, deferPages: true, bookplate: false });
+  // The book they carry: the engine's own Book of Madness, made as the asset viewer makes it to hold, so the hands grip it as they do there.
+  const copy = createBook(GFX, { size: 0.45, pageCount: 60 });
   return { man, sex, copy, lift: standingSole - seatedSole, inUse: false };
 }
 
-let building = null;
-/** Builds the figures that are not built yet, a frame apart, so the page can show what it is doing between them. */
-function ensureFigures() {
-  building ??= (async () => {
-    try {
-      while (figures.length < FIGURE_SEXES.length) {
-        say(`Bringing in the readers… ${figures.length + 1} of ${FIGURE_SEXES.length}`, true);
-        await nextFrame();
-        if (!peopleOn) return;
-        figures.push(buildFigure(FIGURE_SEXES[figures.length]));
-      }
-    } finally {
-      building = null;
+let incoming = null; // the figure the next reader is to be
+let admitting = false;
+/** Lets one more reader in: someone newly baked, or (once there are plenty) someone who has been in before. */
+async function admit() {
+  if (admitting || people.count >= MAX_READERS) return;
+  admitting = true;
+  try {
+    const sex = choose(['male', 'female']);
+    const free = figures.filter((figure) => !figure.inUse && figure.sex === sex);
+    let figure = free.length && (figures.length >= MAX_BAKED || Math.random() < 0.4) ? choose(free) : null;
+    if (!figure && figures.length >= MAX_BAKED) figure = choose(figures.filter((other) => !other.inUse) /* may be empty */);
+    if (!figure && figures.length < MAX_BAKED) {
+      say('Someone is coming in…', true); // (the page is busy while they are made: the bar keeps moving)
+      await nextFrame();
+      if (!peopleOn) return;
+      figure = bakeFigure(sex);
+      figures.push(figure);
+      say(reading ? '' : snapshotNotice);
     }
-  })();
-  return building;
+    if (!figure || !peopleOn) return;
+    incoming = figure;
+    if (people.spawn(clock())) wake();
+  } finally {
+    incoming = null;
+    admitting = false;
+  }
 }
 
 /** Puts a book in a figure's hands, shut while walking and open to read. Any book they held is let go first. */
@@ -792,11 +871,10 @@ function handsFree(man) {
 
 /** What the readers ask of the room (see readers.js). */
 const readerHooks = {
-  canSpawn: () => figures.some((figure) => !figure.inUse),
+  canSpawn: () => !!incoming,
   enter(reader) {
-    const free = figures.filter((figure) => !figure.inUse);
-    const sex = choose([...new Set(free.map((figure) => figure.sex))]);
-    const slot = choose(free.filter((figure) => figure.sex === sex));
+    const slot = incoming;
+    const { sex } = slot;
     slot.inUse = true;
     reader.slot = slot;
     slot.man.setShirtColor(choose(READER_SHIRTS));
@@ -828,9 +906,7 @@ const readerHooks = {
     if (!record.shelfBook.group.visible || borrowed.has(record) || record === reading) return false;
     record.shelfBook.group.visible = false;
     borrowed.add(record);
-    const { man, copy } = reader.slot;
-    copy.setStyle(coverStyleOf(record));
-    holdCopy(man, copy, false);
+    holdCopy(reader.slot.man, reader.slot.copy, false);
     return true;
   },
   shelve(reader) {
@@ -856,36 +932,32 @@ function animateReaders(now) {
   return people.update(now);
 }
 
-// Readers come and go: every so often another walks in, if there is room for them, and each leaves in their own time.
+// Readers come in whenever: one at a random moment, then another at another, each leaving in their own time.
 let arrivalTimer = null;
 const clock = () => performance.now() / 1000;
+const nextArrival = () => 8000 + Math.random() * 40000;
 function arrive() {
   arrivalTimer = null;
   if (!peopleOn) return;
-  if (people.count < MAX_READERS && (people.count < MIN_READERS || Math.random() < 0.6) && people.spawn(clock())) wake();
-  arrivalTimer = setTimeout(arrive, 6000 + Math.random() * 12000);
+  admit();
+  arrivalTimer = setTimeout(arrive, nextArrival());
 }
 
-// People are off by default: they are the heaviest part of the scene. A toggle switches them on.
+// People are off by default: they are the heaviest part of the scene. A toggle switches them on, and the first
+// reader walks in at once; nobody is made before they are wanted.
 let peopleOn = false;
-async function setPeople(on) {
+function setPeople(on) {
   peopleOn = on && titles.length > 0;
   peopleToggle.checked = peopleOn;
   if (peopleOn) {
-    if (figures.length < FIGURE_SEXES.length) {
-      await ensureFigures();
-      say(reading ? '' : snapshotNotice);
-      if (!peopleOn) return;
-    }
-    if (!people.count && people.spawn(clock())) setTimeout(() => { if (peopleOn && people.spawn(clock())) wake(); }, 4000);
-    if (!arrivalTimer) arrivalTimer = setTimeout(arrive, 6000 + Math.random() * 12000);
+    admit();
+    arrivalTimer ??= setTimeout(arrive, nextArrival());
   } else {
     clearTimeout(arrivalTimer);
     arrivalTimer = null;
     people.clear();
     returnBooks(0, true); // everything they had taken is back where it was
   }
-  peopleToggle.checked = peopleOn;
   wake();
 }
 const peopleToggle = document.getElementById('people-toggle');
@@ -1300,9 +1372,11 @@ renderer.setAnimationLoop((now) => {
   stage.target.lerp(GOAL, 1 - Math.exp(-10 * dt));
   view.step(dt);
   if (animateReaders(now / 1000)) dirty = true;
+  if (lodPending && now - lodClock > LOD_EVERY) dirty = true; // (books to be made full as you come near, even if you have stopped)
   if (!dirty) return;
   dirty = false;
   stage.look();   // place the camera on the target, from the view
+  if (now - lodClock > LOD_EVERY) updateShelfLod(now);
   if (reading) holdBook(reading.book); // the open book travels with you
   stage.render();
   if (!shown) { shown = true; loading.classList.add('done'); setTimeout(() => loading.remove(), 800); }
