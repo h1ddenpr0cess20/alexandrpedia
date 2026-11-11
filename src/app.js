@@ -8,22 +8,22 @@
  * pan, scroll or pinch to zoom, double-click or press R to come back. Dragging the open book turns it.
  */
 
-import * as GFX from '../vendor/madness-engine/src/gfx/index.js';
-import { createStage } from '../vendor/madness-engine/src/stage.js';
-import { paintRoom } from '../vendor/madness-engine/src/textures/rooms/studio.js';
-import { defineView } from '../vendor/madness-engine/src/view.js';
-import { createBookcase, stockBooks } from '../vendor/madness-engine/src/props/bookcase.js';
-import { createBook } from '../vendor/madness-engine/src/props/book.js';
-import { createHuman, FIGURES } from '../vendor/madness-engine/src/people/index.js';
-import { createWoodTable } from '../vendor/madness-engine/src/props/wood-table.js';
-import { createWoodChair } from '../vendor/madness-engine/src/props/wood-chair.js';
-import { createTrackLight } from '../vendor/madness-engine/src/props/track-light.js';
-import { createGlassEntry } from '../vendor/madness-engine/src/props/glass-entry.js';
-import { createPersianRug } from '../vendor/madness-engine/src/props/rug.js';
+import * as GFX from 'madness-engine/gfx';
+import { createStage } from 'madness-engine/stage';
+import { paintRoom } from 'madness-engine/textures/rooms/studio';
+import { defineView } from 'madness-engine/view';
+import { createBookcase, stockBooks } from 'madness-engine/props/bookcase';
+import { createBook } from 'madness-engine/props/book';
+import { createHuman, FIGURES } from 'madness-engine/people';
+import { createWoodTable } from 'madness-engine/props/wood-table';
+import { createWoodChair } from 'madness-engine/props/wood-chair';
+import { createTrackLight } from 'madness-engine/props/track-light';
+import { createGlassEntry } from 'madness-engine/props/glass-entry';
+import { createPersianRug } from 'madness-engine/props/rug';
 import { CATALOG, keyOf } from './catalog.js';
 import { SOURCES } from './sources.js';
 import { loadArticle, MAX_PAGES, pageCountForBook } from './library.js';
-import { flowPages } from '../vendor/madness-engine/src/props/book-art.js';
+import { flowPages } from 'madness-engine/props/book-art';
 import { shelveBooksByPriority } from './shelving.js';
 import { catalogsForSections, SECTION_NAMES } from './sections.js';
 import { CENTER_LONG_TABLE_DIMENSIONS, CORNER_READING_TABLE_DIMENSIONS, ORIGINAL_BOOKCASE_DIMENSIONS, WALL_SIGN_FRAME_EXTRA, centerLongTableChairs, centerLongTablePlacement, cornerReadingNookPlacement, TABLE_HEIGHT, wallCasePlacement, wallReadingNookPlacement } from './room-layout.js';

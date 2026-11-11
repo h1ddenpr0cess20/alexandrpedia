@@ -12,10 +12,18 @@
     "snapshot-grokipedia": "node scripts/snapshot-grokipedia.mjs",
     "snapshot-wikipedia": "node scripts/snapshot-wikipedia.mjs",
     "check-titles": "node scripts/check-titles.mjs",
-    "serve": "node scripts/serve.mjs 8080",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
     "snapshot-all": "npm run snapshot-wikipedia && npm run snapshot-grokipedia",
     "update-articles": "node scripts/update-articles.mjs",
     "build-manifest": "node scripts/build-manifest.mjs"
   },
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "vite": "^7.3.8"
+  },
+  "dependencies": {
+    "madness-engine": "git+https://github.com/h1ddenpr0cess20/madness-engine.git#5ce6fa2d0a705a4b23f4fdeda54a0c9f4b595ecc"
+  }
 }
