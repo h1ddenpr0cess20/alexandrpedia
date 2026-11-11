@@ -90,9 +90,28 @@ globalThis.addEventListener('unhandledrejection', (e) => { if (!loading.classLis
 const status = document.getElementById('status');
 const say = (text = '') => { status.textContent = text; status.hidden = !text; };
 
+// Quality presets. High is the full look; Medium and Low draw fewer pixels and cheaper shadows.
+// The choice is remembered in this browser and takes effect on reload (the renderer is built once).
+const QUALITY = Object.freeze({
+  // shelfShadows: whether books standing on the shelves cast shadows (the shelves themselves always do).
+  low:    { pixelRatio: 1,    shadows: false, shadowSize: 512,  shelfShadows: false },
+  medium: { pixelRatio: 1.25, shadows: true,  shadowSize: 1024, shelfShadows: false },
+  high:   { pixelRatio: 2,    shadows: true,  shadowSize: 2048, shelfShadows: true },
+});
+const QUALITY_KEY = 'alexandrpedia.quality';
+let qualityName = 'medium';
+try { const saved = localStorage.getItem(QUALITY_KEY); if (saved in QUALITY) qualityName = saved; } catch { /* storage unavailable */ }
+const quality = QUALITY[qualityName];
+const qualityPicker = document.getElementById('quality');
+qualityPicker.value = qualityName;
+qualityPicker.addEventListener('change', () => {
+  try { localStorage.setItem(QUALITY_KEY, qualityPicker.value); } catch { /* storage unavailable */ }
+  location.reload();
+});
+
 await loadingStep('Starting the renderer…');
 const stage = await createStage(document.getElementById('host'), {
-  room: paintRoom(), shadowSize: 2048, fixtures: 0, label: 'alexandrpedia',
+  room: paintRoom(), shadowSize: quality.shadowSize, shadows: quality.shadows, pixelRatio: quality.pixelRatio, fixtures: 0, label: 'alexandrpedia',
   lens: { distance: 7.5, fov: 36 },
   view: createView(),
 });
@@ -470,6 +489,36 @@ if (missingSnapshots.length) {
 }
 
 
+// ———————————————————————————————————————————— static scene optimizations
+
+/** Whether a book's meshes cast shadows. Shelved books are hundreds of small meshes in the shadow pass. */
+function bookShadows(book, on) {
+  book.group.traverse((node) => { if (node.isMesh) node.castShadow = on; });
+}
+if (!quality.shelfShadows) for (const record of books.values()) bookShadows(record.book, false);
+
+/**
+ * Everything that never moves (room, shelves, furniture, rugs) stops recomputing its matrix
+ * every frame. Books keep updating: they are taken down, opened, turned and put back.
+ */
+function hasLive(node) {
+  if (node.isLight || node.isCamera || byGroup.has(node)) return true;
+  return node.children.some(hasLive);
+}
+function freezeStatic(node) {
+  if (byGroup.has(node) || node.isLight || node.isCamera) return; // books, lights and cameras stay live
+  if (!hasLive(node)) {
+    node.traverse((n) => { n.updateMatrix(); n.matrixAutoUpdate = false; });
+    return;
+  }
+  // A group holding books (a bookcase) or a light: freeze the group itself, keep walking its children.
+  node.updateMatrix();
+  node.matrixAutoUpdate = false;
+  for (const child of node.children) freezeStatic(child);
+}
+scene.updateMatrixWorld(true);
+for (const child of scene.children) freezeStatic(child);
+
 // ———————————————————————————————————————————— people reading in the corners
 
 const READER_SHIRTS = ['#5b6b7a', '#7a4e3a', '#3f5e4c', '#8a6d3b', '#a04b3f', '#d8cbb5', '#2e3a4a'];
@@ -687,6 +736,7 @@ function takeDown(record) {
   const { book, home } = record;
   const place = readingPlace(record);
   book.build();   // the leaves, the first time the book is wanted
+  bookShadows(book, true); // the open book always casts its shadow on the table
   home.parent.remove(book.group);
   scene.add(book.group);
   book.group.position.copy(place.position);
@@ -705,6 +755,7 @@ function putBack(record) {
   book.group.position.copy(home.position);
   book.group.quaternion.copy(home.quaternion);
   book.group.scale.copy(home.scale);
+  if (!quality.shelfShadows) bookShadows(book, false);
   moving.delete(record);
   if (reading === record) reading = null;
   focusOn(SHELF_TARGET);
