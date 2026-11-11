@@ -32,14 +32,14 @@ Click a book to take it down and open it. Click a page's side to turn it, or use
 
 ## Running it
 
-The engine is a git submodule, so clone with it or initialise it:
+The engine is an npm dependency (`madness-engine`, pinned to a commit in `package.json`), and Vite runs the site:
 
 ```bash
-git submodule update --init
-npm run serve
+npm install
+npm run dev
 ```
 
-Then open http://localhost:8080/. Node 22.12 or later is required.
+Then open the local address Vite prints (http://localhost:5173/ by default). `npm run build` writes the site to `dist/`, and `npm run preview` serves that build. Node 22.12 or later is required.
 
 ## Tests
 
@@ -64,4 +64,4 @@ npm run update-articles
 - `src/room-layout.js`: where the bookcases, tables, chairs and books stand.
 - `src/catalog.js`, `src/sections.js`, `src/library.js`: the curated titles and their snapshots.
 - `src/rug.js`: the Persian rugs.
-- `vendor/madness-engine`: the engine that draws the room and its props.
+- `madness-engine` (npm dependency, in `node_modules/`): the engine that draws the room and its props.
