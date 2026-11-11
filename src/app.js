@@ -50,23 +50,6 @@ function pointInBay(bay, x, z, y = 0) {
     .add(new GFX.Vector3(bay.x, 0, bay.z));
 }
 
-/** Where a book stands when it is taken down: above its table, at reading height. */
-function readingPlace(record) {
-  const sourceIndex = SOURCES_IN_ORDER.indexOf(record.source.id);
-  const bookHeight = DESK_HEIGHT + 0.42;
-  if (record.sectionId === 'ai') {
-    const side = sourceIndex === 0 ? 'left' : 'right';
-    const placement = centerLongTablePlacement({ side });
-    const table = pointInBay(AI_BAY, placement.x, placement.z, bookHeight);
-    return { position: table };
-  }
-  const nook = wallReadingNookPlacement({
-    roomHalf: ROOM_HALF,
-    sectionId: record.sectionId,
-    sourceIndex,
-  });
-  return { position: new GFX.Vector3(nook.table.x, bookHeight, nook.table.z) };
-}
 
 // A view that can go from nearly level to nearly overhead, and in close or far out.
 const VIEW_HOME_YAW = 0;
@@ -581,9 +564,12 @@ function releasePerson(object) {
 // The figures are built once, half men and half women, and reused: building a figure takes seconds,
 // so they are only built the first time people are switched on.
 const figures = [];
-function buildFigures() {
-  if (figures.length) return;
-  for (const sex of ['male', 'male', 'female', 'female']) {
+const nextFrame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+async function buildFigures() {
+  // One figure per frame, so switching people on never freezes the page for seconds.
+  for (const sex of ['male', 'male', 'female', 'female'].slice(figures.length)) {
+    await nextFrame();
+    if (!peopleOn) return;
     const man = createHuman(GFX, { sex, detail: 0.5 });
     const joint = FIGURES[sex].joints.ball;
     man.pose({ clip: 'idle', t: 0, time: 0 });
@@ -700,10 +686,16 @@ function turnOver() {
 // People are off by default: they are the heaviest part of the scene. A toggle switches them on.
 let peopleOn = false;
 let turnOverTimer = null;
-function setPeople(on) {
+async function setPeople(on) {
   peopleOn = on && titles.length > 0;
+  peopleToggle.checked = peopleOn;
   if (peopleOn) {
-    buildFigures();
+    if (figures.length < 4) {
+      say('Bringing in the readers…');
+      await buildFigures();
+      say(reading ? '' : snapshotNotice);
+      if (!peopleOn) return;
+    }
     if (!readers.size) { arriveReader(); arriveReader(); }
     if (!turnOverTimer) turnOverTimer = setTimeout(turnOver, 15000 + Math.random() * 30000);
   } else {
@@ -732,19 +724,30 @@ function focusOn(point) { focus.copy(point); panned.set(0, 0, 0); }
 let reading = null;       // the record of the book on the table, if any
 const moving = new Set(); // books that are opening or closing
 
+// The open book is held where you stand: at the point you are looking at, facing you. It goes
+// with you as you walk (pan) and turns with you as you look round it; dragging it turns it in your hands.
+const held = new GFX.Quaternion(); // the book's turn relative to the view
+const VIEW_TURN = new GFX.Quaternion();
+const HOLD_DISTANCE = 0.6; // metres in front of your eyes: a comfortable reading distance
+const AHEAD = new GFX.Vector3();
+function holdBook(book) {
+  AHEAD.copy(stage.target).sub(camera.position).normalize();
+  book.group.position.copy(camera.position).addScaledVector(AHEAD, HOLD_DISTANCE);
+  VIEW_TURN.setFromAxisAngle(AXIS_Y, stage.view.yaw);
+  book.group.quaternion.multiplyQuaternions(VIEW_TURN, held);
+}
+
 function takeDown(record) {
   const { book, home } = record;
-  const place = readingPlace(record);
   book.build();   // the leaves, the first time the book is wanted
-  bookShadows(book, true); // the open book always casts its shadow on the table
+  bookShadows(book, true);
   home.parent.remove(book.group);
   scene.add(book.group);
-  book.group.position.copy(place.position);
-  book.group.quaternion.copy(READ_UPRIGHT); // upright, facing the reader, exactly as before the four-wall room
   book.group.scale.setScalar(1);
+  held.copy(READ_UPRIGHT);
+  holdBook(book);
   reading = record;
   moving.add(record);
-  focusOn(place.position); // only the look point moves; the view keeps its turn, tilt and zoom
 }
 
 function putBack(record) {
@@ -757,8 +760,7 @@ function putBack(record) {
   book.group.scale.copy(home.scale);
   if (!quality.shelfShadows) bookShadows(book, false);
   moving.delete(record);
-  if (reading === record) reading = null;
-  focusOn(SHELF_TARGET);
+  if (reading === record) reading = null; // you stay where you are
   say(snapshotNotice);
 }
 
@@ -876,9 +878,10 @@ canvas.addEventListener('pointermove', (e) => {
   } else if (reading) {
     // Turn the book about the screen's axes: it rotates freely, through any angle.
     SPIN.setFromAxisAngle(AXIS_Y, dx * 0.01);
-    reading.book.group.quaternion.premultiply(SPIN);
+    held.premultiply(SPIN);
     SPIN.setFromAxisAngle(AXIS_X, dy * 0.01);
-    reading.book.group.quaternion.premultiply(SPIN);
+    held.premultiply(SPIN);
+    wake();
   }
 });
 
@@ -990,6 +993,7 @@ renderer.setAnimationLoop((now) => {
   if (!dirty) return;
   dirty = false;
   stage.look();   // place the camera on the target, from the view
+  if (reading) holdBook(reading.book); // the open book stays in your hands, in front of you
   stage.render();
   if (!shown) { shown = true; loading.classList.add('done'); setTimeout(() => loading.remove(), 800); }
 });
