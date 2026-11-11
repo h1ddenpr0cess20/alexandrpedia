@@ -724,9 +724,26 @@ function focusOn(point) { focus.copy(point); panned.set(0, 0, 0); }
 let reading = null;       // the record of the book on the table, if any
 const moving = new Set(); // books that are opening or closing
 
+function readingPlace(record) {
+  const sourceIndex = SOURCES_IN_ORDER.indexOf(record.source.id);
+  const bookHeight = DESK_HEIGHT + 0.42;
+  if (record.sectionId === 'ai') {
+    const side = sourceIndex === 0 ? 'left' : 'right';
+    const placement = centerLongTablePlacement({ side });
+    const table = pointInBay(AI_BAY, placement.x, placement.z, bookHeight);
+    return { position: table };
+  }
+  const nook = wallReadingNookPlacement({
+    roomHalf: ROOM_HALF,
+    sectionId: record.sectionId,
+    sourceIndex,
+  });
+  return { position: new GFX.Vector3(nook.table.x, bookHeight, nook.table.z) };
+}
+
 // The open book travels with you: it stays at the point you look at as you move.
 function holdBook(book) {
-  book.group.position.copy(stage.target);
+  book.group.position.copy(GOAL); // where the view is headed: the table at first, then wherever you move
 }
 
 function takeDown(record) {
@@ -737,9 +754,10 @@ function takeDown(record) {
   scene.add(book.group);
   book.group.quaternion.copy(READ_UPRIGHT);
   book.group.scale.setScalar(1);
-  holdBook(book);
   reading = record;
   moving.add(record);
+  focusOn(readingPlace(record).position); // as on main: the view glides to the book's table
+  book.group.position.copy(readingPlace(record).position);
 }
 
 function putBack(record) {
@@ -753,6 +771,7 @@ function putBack(record) {
   if (!quality.shelfShadows) bookShadows(book, false);
   moving.delete(record);
   if (reading === record) reading = null;
+  focusOn(SHELF_TARGET);
   say(snapshotNotice);
 }
 
