@@ -184,10 +184,6 @@ export const WALL_READING_CORNERS = Object.freeze({
     Object.freeze({ cornerX: -1, cornerZ: -1 }),
     Object.freeze({ cornerX: 1, cornerZ: -1 }),
   ]),
-  science: Object.freeze([
-    Object.freeze({ cornerX: 1, cornerZ: -1 }),
-    Object.freeze({ cornerX: 1, cornerZ: 1 }),
-  ]),
   entertainment: Object.freeze([
     Object.freeze({ cornerX: 1, cornerZ: 1 }),
     Object.freeze({ cornerX: -1, cornerZ: 1 }),

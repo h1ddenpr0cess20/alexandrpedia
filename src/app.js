@@ -37,7 +37,6 @@ const SOURCES_IN_ORDER = ['wikipedia', 'grokipedia'];
 const AI_BAY = Object.freeze({ x: 0, z: 0, turn: 0, sources: SOURCES_IN_ORDER });
 const WALL_BAYS = Object.freeze({
   history:       { x: 0, z: -4.35, turn: 0, sources: SOURCES_IN_ORDER },
-  science:       { x: 4.35, z: 0, turn: -Math.PI / 2, sources: SOURCES_IN_ORDER },
   entertainment:{ x: 0, z: 4.35, turn: Math.PI, sources: SOURCES_IN_ORDER },
   philosophy:    { x: -4.35, z: 0, turn: Math.PI / 2, sources: SOURCES_IN_ORDER },
 });
@@ -271,6 +270,85 @@ lightRun('central AI front', [cases['ai:wikipedia']]);
 lightRun('central AI back', [cases['ai:grokipedia']]);
 for (const sectionId of Object.keys(WALL_BAYS)) {
   lightRun(sectionId, SOURCES_IN_ORDER.map((sourceId) => cases[`${sectionId}:${sourceId}`]));
+}
+
+// ———————————————————————————————————————————— the glass entryway
+
+// The east wall is the way in: a glass storefront with double doors, daylight behind it.
+// Readers walk in through the doors and leave the same way.
+const ENTRY_WIDTH = 4.4;
+const ENTRY_HEIGHT = 3.0;
+const ENTRY_DOOR_WIDTH = 1.8;
+const ENTRY_POINT = Object.freeze({ x: ROOM_HALF - 0.5, z: 0 });
+{
+  const entry = new GFX.Group();
+  entry.name = 'glass entryway';
+  // Daylight beyond the glass: a soft sky-to-pavement gradient, unlit so it reads as outside.
+  const sky = document.createElement('canvas');
+  sky.width = 16; sky.height = 256;
+  const ctx = sky.getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, 0, 256);
+  g.addColorStop(0, '#cfe3f2');
+  g.addColorStop(0.62, '#eef4f7');
+  g.addColorStop(0.66, '#b9b4a8');
+  g.addColorStop(1, '#8f8a80');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 16, 256);
+  const skyTexture = new GFX.CanvasTexture(sky);
+  skyTexture.colorSpace = GFX.SRGBColorSpace;
+  const outside = new GFX.Mesh(new GFX.PlaneGeometry(ENTRY_WIDTH, ENTRY_HEIGHT), new GFX.MeshBasicMaterial({ map: skyTexture }));
+  outside.position.set(0, ENTRY_HEIGHT / 2, -0.012);
+  entry.add(outside);
+
+  const glass = new GFX.MeshStandardMaterial({
+    name: 'entry-glass', color: new GFX.Color('#dfeef5'), roughness: 0.04, metalness: 0.1,
+    transparent: true, opacity: 0.22, depthWrite: false,
+  });
+  const bronze = new GFX.MeshStandardMaterial({ name: 'entry-bronze', color: new GFX.Color('#4a3a2a'), roughness: 0.35, metalness: 0.8 });
+  const pane = (w, h, x, y) => {
+    const m = new GFX.Mesh(new GFX.PlaneGeometry(w, h), glass);
+    m.position.set(x, y, 0);
+    m.renderOrder = 3;
+    entry.add(m);
+  };
+  const bar = (w, h, x, y, depth = 0.08) => {
+    const m = new GFX.Mesh(new GFX.BoxGeometry(w, h, depth), bronze);
+    m.position.set(x, y, 0);
+    m.castShadow = true;
+    entry.add(m);
+  };
+  const side = (ENTRY_WIDTH - ENTRY_DOOR_WIDTH) / 2;
+  const doorTop = 2.35;
+  // Side lights and the transom.
+  pane(side, ENTRY_HEIGHT, -(ENTRY_DOOR_WIDTH + side) / 2, ENTRY_HEIGHT / 2);
+  pane(side, ENTRY_HEIGHT, (ENTRY_DOOR_WIDTH + side) / 2, ENTRY_HEIGHT / 2);
+  pane(ENTRY_DOOR_WIDTH, ENTRY_HEIGHT - doorTop, 0, (ENTRY_HEIGHT + doorTop) / 2);
+  // Two door leaves, each a pane in its own frame, with a long bronze pull.
+  for (const sign of [-1, 1]) {
+    const cx = (sign * ENTRY_DOOR_WIDTH) / 4;
+    pane(ENTRY_DOOR_WIDTH / 2 - 0.08, doorTop - 0.12, cx, doorTop / 2);
+    bar(0.05, doorTop, sign * (ENTRY_DOOR_WIDTH / 2 - 0.025), doorTop / 2, 0.06);
+    bar(0.05, doorTop, sign * 0.025, doorTop / 2, 0.06);
+    bar(ENTRY_DOOR_WIDTH / 2, 0.12, cx, 0.06, 0.06);
+    const pull = new GFX.Mesh(new GFX.CylinderGeometry(0.014, 0.014, 0.9, 10), bronze);
+    pull.position.set(sign * 0.12, 1.05, 0.07);
+    entry.add(pull);
+  }
+  // The storefront frame: head, sill, jambs, the mullions either side of the doors and the transom bar.
+  bar(ENTRY_WIDTH + 0.12, 0.12, 0, ENTRY_HEIGHT);
+  bar(ENTRY_WIDTH + 0.12, 0.04, 0, 0.02);
+  for (const x of [-ENTRY_WIDTH / 2, ENTRY_WIDTH / 2, -ENTRY_DOOR_WIDTH / 2 - 0.03, ENTRY_DOOR_WIDTH / 2 + 0.03]) bar(0.1, ENTRY_HEIGHT, x, ENTRY_HEIGHT / 2);
+  bar(ENTRY_DOOR_WIDTH + 0.12, 0.08, 0, doorTop);
+  // A door mat just inside.
+  const mat = new GFX.Mesh(new GFX.BoxGeometry(ENTRY_DOOR_WIDTH + 0.2, 0.012, 1.0), new GFX.MeshStandardMaterial({ name: 'entry-mat', color: new GFX.Color('#2c2620'), roughness: 0.95 }));
+  mat.position.set(0, 0.006, 0.65);
+  mat.receiveShadow = true;
+  entry.add(mat);
+
+  // Set into the east wall, facing into the room.
+  entry.position.set(ROOM_HALF - 0.02, 0, 0);
+  entry.rotation.y = -Math.PI / 2;
+  scene.add(entry);
 }
 
 /** Draw only the gold rules and lettering; the mahogany below stays visible. */
@@ -621,16 +699,10 @@ const READER_SEATS = CORNER_NOOKS.flatMap((corner, cornerIndex) => {
 const MIN_READERS = 1;
 const MAX_READERS = 4;
 const WALK_SPEED = 1.0; // metres a second
-const READER_EDGE = ROOM_HALF - 0.6;
 const titles = [...books.values()];
 
-/** Where a reader comes in from: the room's edge on the seat's nearer axis, so the walk clears the other chairs. */
-function entranceFor(spot) {
-  return Math.abs(spot.x) >= Math.abs(spot.z)
-    ? { x: Math.sign(spot.x) * READER_EDGE, z: spot.z }
-    : { x: spot.x, z: Math.sign(spot.z) * READER_EDGE };
-}
-
+/** Where every reader comes in and leaves: just inside the glass doors. */
+function entranceFor() { return ENTRY_POINT; }
 // The figures are built once, half men and half women, and reused: building a figure takes seconds,
 // so they are only built the first time people are switched on.
 const figures = [];
@@ -856,7 +928,9 @@ function putBack(record) {
   shelfCulling(book, true);
   moving.delete(record);
   if (reading === record) reading = null;
-  focusOn(SHELF_TARGET);
+  // You stay where you are: the look point stays where you have walked to, not back at the shelves.
+  focus.add(panned);
+  panned.set(0, 0, 0);
   say(snapshotNotice);
 }
 

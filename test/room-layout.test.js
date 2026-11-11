@@ -109,7 +109,6 @@ test('four corner nooks put a compact table near each corner with a chair facing
 test('wall/source book reading positions map to the adjacent corner tables', () => {
   const expected = {
     history: [[-1, -1], [1, -1]],
-    science: [[1, -1], [1, 1]],
     entertainment: [[1, 1], [-1, 1]],
     philosophy: [[-1, 1], [-1, -1]],
   };

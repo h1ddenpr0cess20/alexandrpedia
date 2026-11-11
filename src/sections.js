@@ -12,10 +12,9 @@ const groups = (sectionId, entries) => Object.freeze(entries.flatMap(({ shelf, t
 
 export const SECTION_NAMES = Object.freeze({
   ai: 'Artificial Intelligence',
-  history: 'History',
-  science: 'Science, Nature & Geography',
+  history: 'History & Science',
   entertainment: 'American Popular Culture',
-  philosophy: 'Philosophy & Ideas',
+  philosophy: 'Philosophy, Literature & the Arts',
 });
 
 const HISTORY = groups('history', [
@@ -36,18 +35,43 @@ const HISTORY = groups('history', [
   ] },
 ]);
 
-const SCIENCE = groups('science', [
+const HIDDEN_HISTORY = groups('history', [
+  { shelf: 'Lost empires & forgotten peoples', titles: [
+    'Hittites', 'Minoan civilization', 'Bronze Age collapse', 'Sea Peoples', 'Phoenicia',
+    'Carthage', 'Nabataeans', 'Scythians', 'Olmecs', 'Kingdom of Aksum', 'Khmer Empire',
+    'Srivijaya', 'Mali Empire', 'Mansa Musa', 'Songhai Empire', 'Great Zimbabwe', 'Cahokia',
+    'Easter Island', 'Byzantine Empire', 'Republic of Venice', 'Hanseatic League', 'Varangian Guard',
+  ] },
+  { shelf: 'Curiosities & strange episodes', titles: [
+    'Library of Alexandria', 'Antikythera mechanism', 'Voynich manuscript', "Children's Crusade",
+    'Dancing plague of 1518', 'Defenestrations of Prague', 'Tulip mania', "War of Jenkins' Ear",
+    'Year Without a Summer', 'Taiping Rebellion', 'Pig War', 'Carrington Event', 'Tunguska event',
+    'Great Molasses Flood', 'Radium Girls', 'Emu War',
+  ] },
+]);
+
+const SCIENCE = groups('history', [
   { shelf: 'Physics & space', titles: [
     'Physics', 'Quantum mechanics', 'Theory of relativity', 'Black hole', 'Cosmology',
     'Solar System', 'James Webb Space Telescope', 'Astronomy', 'Planetary science',
+    'Thermodynamics', 'Electromagnetism', 'Particle physics', 'Standard Model', 'Higgs boson',
+    'String theory', 'Dark matter', 'Dark energy', 'Big Bang', 'Neutron star', 'Exoplanet',
+    'Gravitational wave', 'Galaxy', 'Milky Way', 'Sun', 'Moon', 'Mars',
+  ] },
+  { shelf: 'Mathematics', titles: [
+    'Mathematics', 'Calculus', 'Prime number', 'Chaos theory', 'Game theory',
+    'Probability theory', 'Topology', 'Fibonacci sequence',
   ] },
   { shelf: 'Life sciences', titles: [
     'Evolution', 'DNA', 'Genetics', 'Cell biology', 'Human brain', 'Ecology',
     'Microbiology', 'Animal', 'Mammal', 'Bird', 'Reptile', 'Insect', 'Octopus',
+    'Photosynthesis', 'Immune system', 'Virus', 'Bacteria', 'Vaccine', 'Antibiotic',
+    'CRISPR gene editing', 'Neuroscience', 'Human Genome Project', 'Dinosaur', 'Fossil',
   ] },
   { shelf: 'Earth & climate', titles: [
     'Periodic table', 'Chemical reaction', 'Plate tectonics', 'Climate change',
     'Geology', 'Oceanography', 'Earth science', 'Meteorology', 'Glacier',
+    'Chemistry', 'Organic chemistry', 'Volcano', 'Earthquake', 'Tsunami', 'Tropical cyclone',
   ] },
   { shelf: 'Nature & geography', titles: [
     'Geography', 'Physical geography', 'Mountain', 'Forest', 'Rainforest', 'Desert',
@@ -121,8 +145,30 @@ const PHILOSOPHY = groups('philosophy', [
   ] },
 ]);
 
+const LITERATURE = groups('philosophy', [
+  { shelf: 'Ancient & classic works', titles: [
+    'Literature', 'Poetry', 'Novel', 'Epic of Gilgamesh', 'Homer', 'Iliad', 'Odyssey',
+    'Dante Alighieri', 'Divine Comedy', 'William Shakespeare', 'Hamlet',
+    'Miguel de Cervantes', 'Don Quixote', 'Romanticism', 'Gothic fiction',
+  ] },
+  { shelf: 'The novel & modern literature', titles: [
+    'Jane Austen', 'Pride and Prejudice', 'Charles Dickens', 'Herman Melville', 'Moby-Dick',
+    'Mark Twain', 'Emily Dickinson', 'Walt Whitman', 'Leo Tolstoy', 'War and Peace',
+    'Fyodor Dostoevsky', 'Crime and Punishment', 'Modernism', 'Virginia Woolf', 'James Joyce',
+    'Ulysses (novel)', 'Franz Kafka', 'George Orwell', 'Nineteen Eighty-Four',
+    'Gabriel García Márquez', 'One Hundred Years of Solitude', 'Toni Morrison',
+  ] },
+  { shelf: 'The arts', titles: [
+    'Art', 'Painting', 'Sculpture', 'Architecture', 'Art history', 'Impressionism',
+    'Cubism', 'Surrealism', 'Abstract expressionism', 'Leonardo da Vinci', 'Michelangelo',
+    'Rembrandt', 'Vincent van Gogh', 'Pablo Picasso', 'Frida Kahlo', 'Photography',
+    'Classical music', 'Johann Sebastian Bach', 'Wolfgang Amadeus Mozart',
+    'Ludwig van Beethoven', 'Opera', 'Ballet', 'Theatre',
+  ] },
+]);
+
 /**
- * Returns the center AI catalog plus the four surrounding wall collections.
+ * Returns the center AI catalog plus the three wall collections (the fourth wall is the entryway).
  * AI entries keep their existing kinds; new editorial subjects are topics
  * grouped by their shelf label or era.
  */
@@ -130,10 +176,9 @@ export function catalogsForSections(aiCatalog) {
   if (!Array.isArray(aiCatalog)) throw new TypeError('The AI catalog must be an array.');
   return Object.freeze({
     ai: Object.freeze([...aiCatalog]),
-    history: HISTORY,
-    science: SCIENCE,
+    history: Object.freeze([...HISTORY, ...HIDDEN_HISTORY, ...SCIENCE]),
     entertainment: ENTERTAINMENT,
-    philosophy: PHILOSOPHY,
+    philosophy: Object.freeze([...PHILOSOPHY, ...LITERATURE]),
   });
 }
 

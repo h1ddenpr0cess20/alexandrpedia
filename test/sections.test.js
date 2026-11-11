@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 import { CATALOG } from '../src/catalog.js';
 import { allCatalogEntries, catalogsForSections, SECTION_NAMES } from '../src/sections.js';
 
-test('the reading room has a central AI collection and four named wall collections', () => {
-  assert.deepEqual(Object.keys(SECTION_NAMES), ['ai', 'history', 'science', 'entertainment', 'philosophy']);
+test('the reading room has a central AI collection and three named wall collections', () => {
+  assert.deepEqual(Object.keys(SECTION_NAMES), ['ai', 'history', 'entertainment', 'philosophy']);
   const sections = catalogsForSections(CATALOG);
-  assert.deepEqual(Object.keys(sections), ['ai', 'history', 'science', 'entertainment', 'philosophy']);
+  assert.deepEqual(Object.keys(sections), ['ai', 'history', 'entertainment', 'philosophy']);
   assert.deepEqual(sections.ai, CATALOG);
-  assert.equal(SECTION_NAMES.science, 'Science, Nature & Geography');
+  assert.equal(SECTION_NAMES.history, 'History & Science');
   assert.equal(SECTION_NAMES.entertainment, 'American Popular Culture');
-  assert.equal(SECTION_NAMES.philosophy, 'Philosophy & Ideas');
+  assert.equal(SECTION_NAMES.philosophy, 'Philosophy, Literature & the Arts');
 });
 
 test('every curated collection has nonempty article titles and stable shelf groupings', () => {
@@ -29,8 +29,8 @@ test('every curated collection has nonempty article titles and stable shelf grou
   }
 });
 
-test('nature and geography are part of Science, not a separate room section', () => {
-  const science = catalogsForSections(CATALOG).science.map((entry) => entry.title);
+test('science, nature and geography share the History & Science wall', () => {
+  const science = catalogsForSections(CATALOG).history.map((entry) => entry.title);
   for (const title of ['Geography', 'Physical geography', 'Mountain', 'Forest', 'Rainforest', 'Coral reef', 'Biodiversity', 'Animal', 'Evolution', 'Climate change']) {
     assert.ok(science.includes(title), `Science is missing ${title}`);
   }
@@ -57,4 +57,18 @@ test('the import manifest deduplicates article titles across the AI and wall col
   assert.equal(new Set(normalized).size, entries.length);
   assert.ok(entries.length > CATALOG.length + 100);
   assert.throws(() => catalogsForSections(null), /AI catalog must be an array/);
+});
+
+test('the Philosophy wall also holds literature and the arts', () => {
+  const titles = catalogsForSections(CATALOG).philosophy.map((entry) => entry.title);
+  for (const title of ['Ethics', 'William Shakespeare', 'Moby-Dick', 'Painting', 'Ludwig van Beethoven']) {
+    assert.ok(titles.includes(title), `Philosophy is missing ${title}`);
+  }
+});
+
+test('History & Science includes lesser-known history', () => {
+  const titles = catalogsForSections(CATALOG).history.map((entry) => entry.title);
+  for (const title of ['Hanseatic League', 'Great Zimbabwe', 'Antikythera mechanism', 'Tunguska event']) {
+    assert.ok(titles.includes(title), `History & Science is missing ${title}`);
+  }
 });
