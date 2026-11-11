@@ -14,7 +14,8 @@
     "check-titles": "node scripts/check-titles.mjs",
     "serve": "node scripts/serve.mjs 8080",
     "snapshot-all": "npm run snapshot-wikipedia && npm run snapshot-grokipedia",
-    "update-articles": "node scripts/update-articles.mjs"
+    "update-articles": "node scripts/update-articles.mjs",
+    "build-manifest": "node scripts/build-manifest.mjs"
   },
   "license": "UNLICENSED"
 }

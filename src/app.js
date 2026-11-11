@@ -451,8 +451,7 @@ await loadingStep('Reading the committed article snapshots…');
 const books = new Map();
 const byGroup = new Map();
 
-// Keep the current varied shelf heights, but remove the random overall scale from
-// thickness. The spine is sized by measured article pages, not stockBooks' guess.
+// Keep the current varied shelf heights, but remove the random overall scale from thickness.
 const BOOK_SCALE = 0.57;
 const BOOK_PAGE_WIDTH = 0.30;
 const BOOK_BASE_HEIGHT = 0.42;
@@ -461,36 +460,28 @@ const BOOK_LEAF_PITCH = 0.0006;
 const SECTION_CATALOGS = catalogsForSections(CATALOG);
 const missingSnapshots = [];
 
+// The shelves are built from titles alone (data/manifest.json, written by npm run build-manifest). A book on a
+// shelf is an empty shell with placeholder pages; its article is fetched only when it is opened.
+const MANIFEST = await (await fetch(new URL('../data/manifest.json', import.meta.url))).json();
+
 for (const [sectionId, catalog] of Object.entries(SECTION_CATALOGS)) {
   const bay = sectionId === 'ai' ? AI_BAY : WALL_BAYS[sectionId];
   for (const sourceId of bay.sources) {
     const source = SOURCES.find((item) => item.id === sourceId);
-    const results = await Promise.all(catalog.map(async (entry) => {
-      try {
-        const article = await loadArticle(sourceId, entry);
-        return { entry, article };
-      } catch (error) {
-        missingSnapshots.push(`${sourceId}/${entry.title}`);
-        console.warn(`Missing local article snapshot: ${sourceId}/${entry.title} (${error.message})`);
-        return null;
-      }
-    }));
-    const available = results.filter(Boolean);
+    const titles = MANIFEST[sourceId] ?? {};
+    const available = catalog.filter((entry) => {
+      if (titles[entry.title]) return true;
+      missingSnapshots.push(`${sourceId}/${entry.title}`);
+      return false;
+    });
     const stock = stockBooks(available.length, sectionId.length + (sourceId === 'wikipedia' ? 11 : 17));
-    const prepared = await Promise.all(available.map(async ({ entry, article }, index) => {
-      const pages = flowPages(article.text, { print: source.print });
-      const visiblePages = pages.slice(0, MAX_PAGES);
-      const pageCount = pageCountForBook(visiblePages.length);
-      if (pages.length > MAX_PAGES) {
-        console.warn(`${article.title}: ${pages.length} measured pages exceeds the engine's ${MAX_PAGES}-page limit.`);
-      }
+    const prepared = available.map((entry, index) => {
+      const title = titles[entry.title];
       const originalSize = stock[index].size;
       const bookOptions = {
-        ...stock[index],
-        title: article.title,
+        ...stock[index], // its placeholder page count gives the shelf copy its thickness
+        title,
         subtitle: `${source.name} · ${entry.shelf ?? entry.kind}`,
-        pageCount,
-        pages: visiblePages,
         print: source.print,
         width: BOOK_PAGE_WIDTH,
         height: BOOK_BASE_HEIGHT * (originalSize / BOOK_SCALE),
@@ -500,17 +491,16 @@ for (const [sectionId, catalog] of Object.entries(SECTION_CATALOGS)) {
         textureSize: 512,
         bump: false,
       };
-      // Shelved books are shells: their cover and size, with the leaves built when the book is taken down.
       const book = createBook(GFX, { ...bookOptions, size: BOOK_SCALE, shell: true });
       const record = {
-        entry, source, article, book, bookOptions, pages: visiblePages.length,
+        entry, source, title, book, shelfBook: book, bookOptions,
         key: `${sectionId}:${sourceId}:${keyOf(entry)}`,
         sectionId, home: null,
       };
       books.set(record.key, record);
       byGroup.set(book.group, record);
       return book;
-    }));
+    });
     const { left } = shelveBooksByPriority(cases[`${sectionId}:${sourceId}`], prepared);
     if (left.length) console.warn(`${sectionId} / ${source.name}: ${left.length} book(s) did not fit on the shelves`);
     for (const book of prepared) {
@@ -787,11 +777,9 @@ function holdBook(book) {
 }
 
 function takeDown(record) {
-  const { book, home } = record;
-  book.build();   // the leaves, the first time the book is wanted
-  bookShadows(book, true);
-  shelfCulling(book, false);
-  home.parent.remove(book.group);
+  const { book } = record; // the full book, built from its article (see select)
+  record.shelfBook.group.visible = false; // its empty shell stays on the shelf, out of sight, until it goes back
+  byGroup.set(book.group, record);
   scene.add(book.group);
   // Upright with its pages toward you, whichever way you are facing.
   book.group.quaternion.setFromAxisAngle(AXIS_Y, stage.view.aim.yaw).multiply(READ_UPRIGHT);
@@ -832,15 +820,13 @@ function insideOpenBook(node) {
 }
 
 function putBack(record) {
-  const { book, home } = record;
-  book.close({ instant: true }); // shut at once: it is going back on the shelf, not closing in front of anyone
+  const { book, shelfBook } = record;
+  // The full book is let go of; the shell on the shelf takes its place again.
   scene.remove(book.group);
-  home.parent.add(book.group);
-  book.group.position.copy(home.position);
-  book.group.quaternion.copy(home.quaternion);
-  book.group.scale.copy(home.scale);
-  if (!quality.shelfShadows) bookShadows(book, false);
-  shelfCulling(book, true);
+  byGroup.delete(book.group);
+  if (book !== shelfBook) disposeBook(book.group);
+  record.book = shelfBook;
+  shelfBook.group.visible = true;
   moving.delete(record);
   if (reading === record) reading = null;
   // You stay where you are: the look point stays where you have walked to, not back at the shelves.
@@ -849,10 +835,36 @@ function putBack(record) {
   say(snapshotNotice);
 }
 
-function select(key) {
+/** Frees a book's geometry, materials and textures once it is no longer wanted. */
+function disposeBook(group) {
+  group.traverse((node) => {
+    node.geometry?.dispose?.();
+    for (const material of [].concat(node.material ?? [])) {
+      for (const key of ['map', 'bumpMap', 'normalMap', 'roughnessMap', 'alphaMap']) material[key]?.dispose?.();
+      material.dispose?.();
+    }
+  });
+}
+
+let opening = 0; // which open was asked for last: a slower fetch for an earlier click is dropped
+
+/** Opens a book: its article is fetched now, laid out into pages, and made into a full book in your hands. */
+async function select(key) {
   const record = books.get(key);
   if (!record || reading === record) return;
   if (reading) putBack(reading);
+  const ticket = ++opening;
+  say('Opening…');
+  let article;
+  try {
+    article = await loadArticle(record.source.id, record.entry);
+  } catch (error) {
+    if (ticket === opening) say(`Could not open ${record.title}: ${error.message}`);
+    return;
+  }
+  if (ticket !== opening || reading) return;
+  const pages = flowPages(article.text, { print: record.source.print }).slice(0, MAX_PAGES);
+  record.book = createBook(GFX, { ...record.bookOptions, pageCount: pageCountForBook(pages.length), pages, size: BOOK_SCALE });
   takeDown(record);
   record.book.open();
   wake();
