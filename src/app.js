@@ -231,7 +231,7 @@ const poolTexture = (() => {
   return texture;
 })();
 const poolMaterial = new GFX.MeshBasicMaterial({
-  map: poolTexture, color: new GFX.Color(TRACK_WARM).multiplyScalar(0.35),
+  map: poolTexture, color: new GFX.Color(TRACK_WARM).multiplyScalar(0.15),
   transparent: true, depthWrite: false, blending: GFX.AdditiveBlending, toneMapped: false,
 });
 
@@ -286,7 +286,7 @@ function lightRun(name, shelves) {
     pool.renderOrder = 2;
     scene.add(pool);
   }
-  const light = new GFX.PointLight(new GFX.Color(TRACK_WARM), 5, 4.5, 1.4);
+  const light = new GFX.PointLight(new GFX.Color(TRACK_WARM), 2, 4.5, 1.4);
   light.name = `${name} track light`;
   light.castShadow = false;
   light.position.copy(middle).addScaledVector(front, faceOut + 0.9).setY(2.4);
