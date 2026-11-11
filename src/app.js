@@ -724,17 +724,9 @@ function focusOn(point) { focus.copy(point); panned.set(0, 0, 0); }
 let reading = null;       // the record of the book on the table, if any
 const moving = new Set(); // books that are opening or closing
 
-// The open book is held where you stand: at the point you are looking at, facing you. It goes
-// with you as you walk (pan) and turns with you as you look round it; dragging it turns it in your hands.
-const held = new GFX.Quaternion(); // the book's turn relative to the view
-const VIEW_TURN = new GFX.Quaternion();
-const HOLD_DISTANCE = 0.6; // metres in front of your eyes: a comfortable reading distance
-const AHEAD = new GFX.Vector3();
+// The open book travels with you: it stays at the point you look at as you move.
 function holdBook(book) {
-  AHEAD.copy(stage.target).sub(camera.position).normalize();
-  book.group.position.copy(camera.position).addScaledVector(AHEAD, HOLD_DISTANCE);
-  VIEW_TURN.setFromAxisAngle(AXIS_Y, stage.view.yaw);
-  book.group.quaternion.multiplyQuaternions(VIEW_TURN, held);
+  book.group.position.copy(stage.target);
 }
 
 function takeDown(record) {
@@ -743,8 +735,8 @@ function takeDown(record) {
   bookShadows(book, true);
   home.parent.remove(book.group);
   scene.add(book.group);
+  book.group.quaternion.copy(READ_UPRIGHT);
   book.group.scale.setScalar(1);
-  held.copy(READ_UPRIGHT);
   holdBook(book);
   reading = record;
   moving.add(record);
@@ -760,7 +752,7 @@ function putBack(record) {
   book.group.scale.copy(home.scale);
   if (!quality.shelfShadows) bookShadows(book, false);
   moving.delete(record);
-  if (reading === record) reading = null; // you stay where you are
+  if (reading === record) reading = null;
   say(snapshotNotice);
 }
 
@@ -878,10 +870,9 @@ canvas.addEventListener('pointermove', (e) => {
   } else if (reading) {
     // Turn the book about the screen's axes: it rotates freely, through any angle.
     SPIN.setFromAxisAngle(AXIS_Y, dx * 0.01);
-    held.premultiply(SPIN);
+    reading.book.group.quaternion.premultiply(SPIN);
     SPIN.setFromAxisAngle(AXIS_X, dy * 0.01);
-    held.premultiply(SPIN);
-    wake();
+    reading.book.group.quaternion.premultiply(SPIN);
   }
 });
 
@@ -993,7 +984,7 @@ renderer.setAnimationLoop((now) => {
   if (!dirty) return;
   dirty = false;
   stage.look();   // place the camera on the target, from the view
-  if (reading) holdBook(reading.book); // the open book stays in your hands, in front of you
+  if (reading) holdBook(reading.book); // the open book travels with you
   stage.render();
   if (!shown) { shown = true; loading.classList.add('done'); setTimeout(() => loading.remove(), 800); }
 });
