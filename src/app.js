@@ -461,7 +461,7 @@ const SECTION_CATALOGS = catalogsForSections(CATALOG);
 const missingSnapshots = [];
 
 // The shelves are built from titles alone (data/manifest.json, written by npm run build-manifest). A book on a
-// shelf is an empty shell with placeholder pages; its article is fetched only when it is opened.
+// shelf is a whole book with blank placeholder pages; its article is fetched only when it is opened.
 const MANIFEST = await (await fetch(new URL('../data/manifest.json', import.meta.url))).json();
 
 for (const [sectionId, catalog] of Object.entries(SECTION_CATALOGS)) {
@@ -491,7 +491,8 @@ for (const [sectionId, catalog] of Object.entries(SECTION_CATALOGS)) {
         textureSize: 512,
         bump: false,
       };
-      const book = createBook(GFX, { ...bookOptions, size: BOOK_SCALE, shell: true });
+      // A whole book with blank pages: its words are written only once it is pulled from the shelf (see select).
+      const book = createBook(GFX, { ...bookOptions, size: BOOK_SCALE });
       const record = {
         entry, source, title, book, shelfBook: book, bookOptions,
         key: `${sectionId}:${sourceId}:${keyOf(entry)}`,
@@ -778,7 +779,7 @@ function holdBook(book) {
 
 function takeDown(record) {
   const { book } = record; // the full book, built from its article (see select)
-  record.shelfBook.group.visible = false; // its empty shell stays on the shelf, out of sight, until it goes back
+  record.shelfBook.group.visible = false; // its shelf copy stays on the shelf, out of sight, until it goes back
   byGroup.set(book.group, record);
   scene.add(book.group);
   // Upright with its pages toward you, whichever way you are facing.
@@ -821,7 +822,7 @@ function insideOpenBook(node) {
 
 function putBack(record) {
   const { book, shelfBook } = record;
-  // The full book is let go of; the shell on the shelf takes its place again.
+  // The full book is let go of; the shelf copy takes its place again.
   scene.remove(book.group);
   byGroup.delete(book.group);
   if (book !== shelfBook) disposeBook(book.group);
