@@ -496,6 +496,7 @@ for (const [sectionId, catalog] of Object.entries(SECTION_CATALOGS)) {
         height: BOOK_BASE_HEIGHT * (originalSize / BOOK_SCALE),
         leafPitch: BOOK_LEAF_PITCH,
         deferPages: true,
+        coverDetail: 'low', // painted in full only near the camera: see coverDetailNear below
         bookplate: false,
         textureSize: 512,
         bump: false,
@@ -740,6 +741,39 @@ function turnOver() {
   turnOverTimer = setTimeout(turnOver, 15000 + Math.random() * 30000);
 }
 
+// ———————————————————————————————————————————— cover detail by distance
+
+// Shelf books show a low-quality cover from afar and their full cover (lettering, foil, relief) up close.
+// The gap between the two distances keeps a book from flipping back and forth at the edge.
+const FULL_COVER_WITHIN = 3.5;
+const LOW_COVER_BEYOND = 5;
+const COVER_CHANGES_PER_FRAME = 3; // painting a full cover takes a few milliseconds: spread them out
+const shelfSpots = new Map(); // record -> where it stands on its shelf, in the world
+function shelfSpot(record) {
+  let spot = shelfSpots.get(record);
+  if (!spot) {
+    record.home.parent.updateMatrixWorld(true);
+    spot = record.home.position.clone().applyMatrix4(record.home.parent.matrixWorld);
+    shelfSpots.set(record, spot);
+  }
+  return spot;
+}
+/** Paints covers up or down as you move. Returns whether any are still waiting, so the frame loop keeps going. */
+function coverDetailNear(eye) {
+  let changes = 0;
+  let waiting = false;
+  for (const record of books.values()) {
+    if (record === reading) continue;
+    const distance = shelfSpot(record).distanceTo(eye);
+    const want = distance < FULL_COVER_WITHIN ? 'full' : distance > LOW_COVER_BEYOND ? 'low' : record.book.coverDetail;
+    if (want === record.book.coverDetail) continue;
+    if (changes >= COVER_CHANGES_PER_FRAME) { waiting = true; break; }
+    record.book.setCoverDetail(want);
+    changes++;
+  }
+  return changes > 0 || waiting;
+}
+
 // People are off by default: they are the heaviest part of the scene. A toggle switches them on.
 let peopleOn = false;
 let turnOverTimer = null;
@@ -789,6 +823,7 @@ function holdBook(book) {
 function takeDown(record) {
   const { book, home } = record;
   book.build();   // the leaves, the first time the book is wanted
+  book.setCoverDetail('full'); // the book in your hands is always painted in full
   bookShadows(book, true);
   shelfCulling(book, false);
   home.parent.remove(book.group);
@@ -1087,6 +1122,7 @@ renderer.setAnimationLoop((now) => {
   stage.target.lerp(GOAL, 1 - Math.exp(-10 * dt));
   view.step(dt);
   if (animateReaders(now / 1000)) dirty = true;
+  if (coverDetailNear(camera.position)) dirty = true;
   if (!dirty) return;
   dirty = false;
   stage.look();   // place the camera on the target, from the view
