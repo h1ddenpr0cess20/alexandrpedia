@@ -811,16 +811,22 @@ function clearSpot(goal) {
   AHEAD.normalize();
   blocker.set(camera.position, AHEAD);
   blocker.far = distance + BOOK_CLEARANCE;
-  const hit = blocker.intersectObjects(scene.children, true).find((h) => !insideOpenBook(h.object) && h.distance > 0.05);
+  const hit = blocker.intersectObjects(obstacles(), false).find((h) => h.distance > 0.05);
   if (hit && hit.distance - BOOK_CLEARANCE < distance) distance = Math.max(0.5, hit.distance - BOOK_CLEARANCE);
   return SPOT.copy(camera.position).addScaledVector(AHEAD, distance);
 }
 const SPOT = new GFX.Vector3();
-function insideOpenBook(node) {
-  for (let n = node; n; n = n.parent) if (reading && n === reading.book.group) return true;
-  return false;
+// What the open book must stay clear of: the room's fixed meshes (walls, shelves, furniture), not the books
+// on the shelves or the people. Gathered once; the room does not change.
+let fixedMeshes = null;
+function obstacles() {
+  if (!fixedMeshes) {
+    fixedMeshes = [];
+    const skip = (node) => { for (let n = node; n; n = n.parent) if (byGroup.has(n) || n.name?.endsWith(' reader')) return true; return false; };
+    scene.traverse((node) => { if (node.isMesh && node.visible && !skip(node)) fixedMeshes.push(node); });
+  }
+  return fixedMeshes;
 }
-
 function putBack(record) {
   const { book, shelfBook } = record;
   // The full book is let go of; the shelf copy takes its place again.
@@ -1056,7 +1062,9 @@ globalThis.addEventListener('blur', () => { heldKeys.clear(); fast = false; });
 // touched the page, or the page has been resized or has new text. A still room costs nothing to leave alone.
 let dirty = true;
 function wake() { dirty = true; }
-for (const type of ['pointerdown', 'pointermove', 'pointerup', 'wheel', 'keydown', 'dblclick']) globalThis.addEventListener(type, wake, { passive: true });
+// Moving the pointer with no button held changes nothing on screen, so it doesn't redraw; a drag does.
+for (const type of ['pointerdown', 'pointerup', 'wheel', 'keydown', 'dblclick']) globalThis.addEventListener(type, wake, { passive: true });
+globalThis.addEventListener('pointermove', (e) => { if (e.buttons) wake(); }, { passive: true });
 new ResizeObserver(wake).observe(document.getElementById('host'));
 
 /** A book's pose as numbers: if it is the same as last frame, it is at rest. */
