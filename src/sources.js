@@ -24,7 +24,7 @@ export const WIKIPEDIA = Object.freeze({
 export const GROKIPEDIA = Object.freeze({
   id: 'grokipedia',
   name: 'Grokipedia',
-  print: false, // Use the engine's Madman's Hand page lettering.
+  print: true, // Regular print, as Wikipedia's books.
   license: 'See grokipedia.com',
   pageUrl: (title) => `https://grokipedia.com/page/${encodeURIComponent(slugOf(title))}`,
   async fetch(title, options = {}) {
