@@ -208,33 +208,12 @@ for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
 
 // Ceiling track rails over each run of shelves, with one PAR can per bookcase (the engine's light-show
 // can: an iron barrel, wider at the lens), each tilted to aim at its bookcase. The renderer has point
-// lights only (eight at most), so each run gets one warm light in front of its shelves, and each case a
-// soft pool of light on its face, so the light reads as thrown by the cans.
+// lights only (eight at most), so each run gets one warm light just in front of and above its shelves.
 const TRACK_HEIGHT = 3.7;     // the rail, hung below the 4.2 m ceiling line
 const TRACK_REACH = 1.4;      // how far out from a bookcase's face the rail runs
 const TRACK_WARM = '#ffd8a8'; // a warm halogen white
 const trackIron = new GFX.MeshStandardMaterial({ name: 'track-iron', color: new GFX.Color('#25252b'), roughness: 0.45, metalness: 0.85 });
 const lensGlow = new GFX.MeshBasicMaterial({ color: new GFX.Color(TRACK_WARM), toneMapped: false });
-const poolTexture = (() => {
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const ctx = c.getContext('2d');
-  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-  g.addColorStop(0, 'rgba(255, 255, 255, 0.55)');
-  g.addColorStop(0.45, 'rgba(255, 255, 255, 0.32)');
-  g.addColorStop(0.8, 'rgba(255, 255, 255, 0.08)');
-  g.addColorStop(1, 'rgba(255, 255, 255, 0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 128, 128);
-  const texture = new GFX.CanvasTexture(c);
-  texture.colorSpace = GFX.SRGBColorSpace;
-  return texture;
-})();
-const poolMaterial = new GFX.MeshBasicMaterial({
-  map: poolTexture, color: new GFX.Color(TRACK_WARM).multiplyScalar(0.15),
-  transparent: true, depthWrite: false, blending: GFX.AdditiveBlending, toneMapped: false,
-});
-
 /** A bookcase's facing (its front, toward the room), from where it stands and how it is turned. */
 function caseFront(shelf) {
   const r = shelf.group.rotation.y;
@@ -259,7 +238,7 @@ function parCan(lens, target) {
   return g;
 }
 
-/** One run of shelves (cases standing side by side, facing the same way): its rail, cans, light and pools. */
+/** One run of shelves (cases standing side by side, facing the same way): its rail, cans and light. */
 function lightRun(name, shelves) {
   const front = caseFront(shelves[0]);
   const along = new GFX.Vector3(front.z, 0, -front.x);
@@ -279,17 +258,12 @@ function lightRun(name, shelves) {
     const target = face.clone().setY(ORIGINAL_BOOKCASE_DIMENSIONS.height * 0.55);
     const lens = shelf.group.position.clone().addScaledVector(front, faceOut + TRACK_REACH).setY(TRACK_HEIGHT);
     scene.add(parCan(lens, target));
-    const pool = new GFX.Mesh(new GFX.PlaneGeometry(1.5, 2.1), poolMaterial);
-    pool.name = `${name} light pool`;
-    pool.position.copy(target);
-    pool.rotation.y = shelf.group.rotation.y;
-    pool.renderOrder = 2;
-    scene.add(pool);
   }
-  const light = new GFX.PointLight(new GFX.Color(TRACK_WARM), 2, 4.5, 1.4);
+  // Close in and high, with a short reach, so the light falls off down the shelves instead of flattening them.
+  const light = new GFX.PointLight(new GFX.Color(TRACK_WARM), 3, 3.2, 2);
   light.name = `${name} track light`;
   light.castShadow = false;
-  light.position.copy(middle).addScaledVector(front, faceOut + 0.9).setY(2.4);
+  light.position.copy(middle).addScaledVector(front, faceOut + 0.7).setY(2.5);
   scene.add(light);
 }
 
