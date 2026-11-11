@@ -20,9 +20,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Install dependencies
+        # The engine (madness-engine) is an npm dependency; the page-block test builds real engine books.
+        run: npm ci
       - name: Check JavaScript syntax
         run: |
           node --check src/app.js
+          node --check src/readers.js
+          node --check src/walk-paths.js
+          node --check src/room-plan.js
+          node --check src/page-block.js
           node --check src/sections.js
           node --check scripts/check-titles.mjs
           node --check scripts/snapshot-wikipedia.mjs
