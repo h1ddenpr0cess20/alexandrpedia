@@ -204,6 +204,101 @@ for (const [sectionId, bay] of Object.entries(WALL_BAYS)) {
   addSideBySideWallCases(sectionId, bay);
 }
 
+// ———————————————————————————————————————————— track lighting over the shelves
+
+// Ceiling track rails over each run of shelves, with one PAR can per bookcase (the engine's light-show
+// can: an iron barrel, wider at the lens), each tilted to aim at its bookcase. The renderer has point
+// lights only (eight at most), so each run gets one warm light in front of its shelves, and each case a
+// soft pool of light on its face, so the light reads as thrown by the cans.
+const TRACK_HEIGHT = 3.7;     // the rail, hung below the 4.2 m ceiling line
+const TRACK_REACH = 1.4;      // how far out from a bookcase's face the rail runs
+const TRACK_WARM = '#ffd8a8'; // a warm halogen white
+const trackIron = new GFX.MeshStandardMaterial({ name: 'track-iron', color: new GFX.Color('#25252b'), roughness: 0.45, metalness: 0.85 });
+const lensGlow = new GFX.MeshBasicMaterial({ color: new GFX.Color(TRACK_WARM), toneMapped: false });
+const poolTexture = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, 'rgba(255, 255, 255, 0.55)');
+  g.addColorStop(0.45, 'rgba(255, 255, 255, 0.32)');
+  g.addColorStop(0.8, 'rgba(255, 255, 255, 0.08)');
+  g.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 128);
+  const texture = new GFX.CanvasTexture(c);
+  texture.colorSpace = GFX.SRGBColorSpace;
+  return texture;
+})();
+const poolMaterial = new GFX.MeshBasicMaterial({
+  map: poolTexture, color: new GFX.Color(TRACK_WARM).multiplyScalar(0.35),
+  transparent: true, depthWrite: false, blending: GFX.AdditiveBlending, toneMapped: false,
+});
+
+/** A bookcase's facing (its front, toward the room), from where it stands and how it is turned. */
+function caseFront(shelf) {
+  const r = shelf.group.rotation.y;
+  return new GFX.Vector3(Math.sin(r), 0, Math.cos(r));
+}
+
+/** A PAR can at `lens`, its lens end turned to face `target`. */
+function parCan(lens, target) {
+  const g = new GFX.Group();
+  g.name = 'track PAR can';
+  const can = new GFX.Mesh(new GFX.CylinderGeometry(0.12, 0.16, 0.3, 14), trackIron);
+  can.quaternion.setFromUnitVectors(new GFX.Vector3(0, -1, 0), target.clone().sub(lens).normalize());
+  const lensMesh = new GFX.Mesh(new GFX.CircleGeometry(0.14, 14), lensGlow);
+  lensMesh.position.set(0, -0.16, 0);
+  lensMesh.rotation.x = Math.PI / 2;
+  can.add(lensMesh);
+  // The yoke: a short stem up to the rail.
+  const stem = new GFX.Mesh(new GFX.CylinderGeometry(0.015, 0.015, 0.22, 6), trackIron);
+  stem.position.y = 0.2;
+  g.add(can, stem);
+  g.position.copy(lens);
+  return g;
+}
+
+/** One run of shelves (cases standing side by side, facing the same way): its rail, cans, light and pools. */
+function lightRun(name, shelves) {
+  const front = caseFront(shelves[0]);
+  const along = new GFX.Vector3(front.z, 0, -front.x);
+  const middle = new GFX.Vector3();
+  for (const shelf of shelves) middle.add(shelf.group.position);
+  middle.divideScalar(shelves.length);
+  const faceOut = ORIGINAL_BOOKCASE_DIMENSIONS.depth / 2;
+  const railAt = middle.clone().addScaledVector(front, faceOut + TRACK_REACH).setY(TRACK_HEIGHT + 0.2);
+  const length = shelves.length * ORIGINAL_BOOKCASE_DIMENSIONS.width + 0.6;
+  const rail = new GFX.Mesh(new GFX.BoxGeometry(length, 0.05, 0.07), trackIron);
+  rail.name = `${name} track rail`;
+  rail.position.copy(railAt);
+  rail.rotation.y = Math.atan2(along.x, along.z) - Math.PI / 2;
+  scene.add(rail);
+  for (const shelf of shelves) {
+    const face = shelf.group.position.clone().addScaledVector(front, faceOut + 0.02);
+    const target = face.clone().setY(ORIGINAL_BOOKCASE_DIMENSIONS.height * 0.55);
+    const lens = shelf.group.position.clone().addScaledVector(front, faceOut + TRACK_REACH).setY(TRACK_HEIGHT);
+    scene.add(parCan(lens, target));
+    const pool = new GFX.Mesh(new GFX.PlaneGeometry(1.5, 2.1), poolMaterial);
+    pool.name = `${name} light pool`;
+    pool.position.copy(target);
+    pool.rotation.y = shelf.group.rotation.y;
+    pool.renderOrder = 2;
+    scene.add(pool);
+  }
+  const light = new GFX.PointLight(new GFX.Color(TRACK_WARM), 5, 4.5, 1.4);
+  light.name = `${name} track light`;
+  light.castShadow = false;
+  light.position.copy(middle).addScaledVector(front, faceOut + 0.9).setY(2.4);
+  scene.add(light);
+}
+
+lightRun('central AI front', [cases['ai:wikipedia']]);
+lightRun('central AI back', [cases['ai:grokipedia']]);
+for (const sectionId of Object.keys(WALL_BAYS)) {
+  lightRun(sectionId, SOURCES_IN_ORDER.map((sourceId) => cases[`${sectionId}:${sourceId}`]));
+}
+
 /** Draw only the gold rules and lettering; the mahogany below stays visible. */
 function createSectionSignFace(sectionId, collectionLabel, compact = false) {
   const canvas = document.createElement('canvas');
