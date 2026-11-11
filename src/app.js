@@ -631,19 +631,6 @@ function entranceFor(spot) {
     : { x: spot.x, z: Math.sign(spot.z) * READER_EDGE };
 }
 
-/** Frees a book's geometry and textures once it has left the room. */
-function releasePerson(object) {
-  object.traverse((node) => {
-    node.geometry?.dispose?.();
-    for (const material of [].concat(node.material ?? [])) {
-      for (const key of ['map', 'bumpMap', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'alphaMap', 'detailMap']) {
-        material[key]?.dispose?.();
-      }
-      material.dispose?.();
-    }
-  });
-}
-
 // The figures are built once, half men and half women, and reused: building a figure takes seconds,
 // so they are only built the first time people are switched on.
 const figures = [];
@@ -659,7 +646,12 @@ async function buildFigures() {
     const standingSole = man.point('footL', joint)[1];
     man.pose({ clip: 'read', t: 1, time: 0 });
     const seatedSole = man.point('footL', joint)[1];
-    figures.push({ man, sex, lift: standingSole - seatedSole, inUse: false });
+    // Each figure gets its look, and its own book to carry, once: restyling a figure takes seconds,
+    // so doing it each time someone walks in froze the page. Arrivals only change the shirt.
+    man.customize(randomLook(sex));
+    // The engine's own Book of Madness, made as the asset viewer makes it to hold, so the hands grip it as they do there.
+    const copy = createBook(GFX, { size: 0.45, pageCount: 60 });
+    figures.push({ man, sex, copy, lift: standingSole - seatedSole, inUse: false });
   }
 }
 
@@ -670,13 +662,8 @@ function createReader(seat, record) {
   const sex = choose(sexes);
   const slot = choose(figures.filter((f) => !f.inUse && f.sex === sex));
   slot.inUse = true;
-  const { man } = slot;
-  const look = randomLook(sex);
-  man.customize(look);
+  const { man, copy } = slot;
   man.setShirtColor(choose(READER_SHIRTS));
-
-  // The engine's own Book of Madness, made as the asset viewer makes it to hold, so the hands grip it as they do there.
-  const copy = createBook(GFX, { size: 0.45, pageCount: 60 });
   holdCopy(man, copy, false);
   man.group.name = `${sex} reader`;
   scene.add(man.group);
@@ -708,7 +695,8 @@ function walkReader(reader, now) {
   const { group } = man;
   group.position.set(from.x + dx * along, 0, from.z + dz * along);
   group.rotation.y = Math.atan2(dx, dz);
-  man.pose({ clip: 'walk', t: elapsed, time: now, speed: 1 });
+  // Re-pose at most 30 times a second: posing a figure is costly, and the eye can't tell at walking pace.
+  if (!(now - (reader.posed ?? -1) < 1 / 30)) { man.pose({ clip: 'walk', t: elapsed, time: now, speed: 1 }); reader.posed = now; }
   if (along < 1) return true;
 
   if (inbound) {
@@ -719,10 +707,9 @@ function walkReader(reader, now) {
     man.pose({ clip: 'read', t: 1, time: 0 });
     return false;
   }
-  // Out of the room: the figure is put away for the next reader, and the book copy is freed.
+  // Out of the room: the figure, and the book it carries, are put away for the next reader.
   scene.remove(group);
   reader.slot.inUse = false;
-  releasePerson(reader.copy.group);
   readers.delete(reader.key);
   return false;
 }
@@ -787,7 +774,6 @@ async function setPeople(on) {
     for (const reader of [...readers.values()]) {
       scene.remove(reader.slot.man.group);
       reader.slot.inUse = false;
-      releasePerson(reader.copy.group);
       readers.delete(reader.key);
     }
   }
