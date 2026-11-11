@@ -16,19 +16,19 @@ export const WIKIPEDIA = Object.freeze({
   print: true,
   license: 'CC BY-SA 4.0',
   pageUrl: (title) => `https://en.wikipedia.org/wiki/${encodeURIComponent(slugOf(title))}`,
-  async fetch(title) {
-    return readSnapshot(WIKIPEDIA.id, title, WIKIPEDIA.pageUrl(title), WIKIPEDIA.license);
+  async fetch(title, options = {}) {
+    return readSnapshot(WIKIPEDIA.id, title, WIKIPEDIA.pageUrl(title), WIKIPEDIA.license, options);
   }
 });
 
 export const GROKIPEDIA = Object.freeze({
   id: 'grokipedia',
   name: 'Grokipedia',
-  print: false, // Use the engine's Madman's Hand page lettering.
+  print: true, // Regular print, as Wikipedia's books.
   license: 'See grokipedia.com',
   pageUrl: (title) => `https://grokipedia.com/page/${encodeURIComponent(slugOf(title))}`,
-  async fetch(title) {
-    return readSnapshot(GROKIPEDIA.id, title, GROKIPEDIA.pageUrl(title), GROKIPEDIA.license);
+  async fetch(title, options = {}) {
+    return readSnapshot(GROKIPEDIA.id, title, GROKIPEDIA.pageUrl(title), GROKIPEDIA.license, options);
   }
 });
 
@@ -36,12 +36,12 @@ export const GROKIPEDIA = Object.freeze({
  * Read the committed JSON snapshot. Missing or malformed files are explicit errors,
  * never a trigger for a live encyclopedia request.
  */
-async function readSnapshot(sourceId, title, url, license) {
+async function readSnapshot(sourceId, title, url, license, { fetchImpl = globalThis.fetch } = {}) {
   const base = typeof document !== 'undefined'
     ? document.baseURI
     : new URL('../', import.meta.url);
   const file = new URL(`data/${sourceId}/${encodeURIComponent(slugOf(title))}.json`, base);
-  const response = await fetch(file.href);
+  const response = await fetchImpl(file.href);
   const sourceName = sourceId === 'wikipedia' ? 'Wikipedia' : 'Grokipedia';
   if (response.status === 404) throw new ArticleNotFound(sourceName, title);
   if (!response.ok) throw new Error(`Could not read ${sourceId} snapshot (${response.status}): ${file.pathname}`);

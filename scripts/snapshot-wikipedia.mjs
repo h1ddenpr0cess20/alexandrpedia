@@ -1,20 +1,24 @@
 // Saves every catalog article from Wikipedia as data/wikipedia/<Slug>.json, in the same form as the Grokipedia
-// snapshots, so the books can be read from our own origin. Slow on purpose: one request a minute. A rate limit (429)
-// waits before the same article is tried again, and three in a row stop the run. Articles already saved are skipped,
+// snapshots, so the books can be read from our own origin. Successful requests are spaced 2.5 seconds apart.
+// Only actual rate-limit responses trigger a longer adaptive cooldown. Articles already saved are skipped,
 // so a run can be started again later. Needs network access to en.wikipedia.org; behind a proxy, set
 // NODE_USE_ENV_PROXY=1 (Node 22.21 or later). Run: npm run snapshot-wikipedia
 import { mkdir, rename, stat, writeFile } from 'node:fs/promises';
 import { CATALOG } from '../src/catalog.js';
+import { allCatalogEntries } from '../src/sections.js';
 import { slugOf } from '../src/sources.js';
 import { wikipediaExtractToText } from '../src/text.js';
+import { parseRetryAfter, retryDelayMs } from '../src/snapshot-pacing.js';
 
-const GAP_MS = 60_000;          // one request a minute: each starts at least this long after the last one started
-const BACKOFF_MS = 5 * 60_000;  // after a rate limit, at least this long before the same article is tried again
-const MAX_RATE_LIMITS = 3;      // rate limits in a row before the run stops
+const GAP_MS = 2_500;             // normal pace: one request every 2.5 seconds
+const BACKOFF_BASE_MS = 15_000;   // starts at 15 seconds only after a 429/503 response
+const BACKOFF_MAX_MS = 3 * 60_000; // capped exponential backoff after repeated rate limits
+const MAX_RATE_LIMITS = 5;       // consecutive rate limits before stopping for manual review
 const MAX_TRIES = 3;            // tries for one article after other failures (network errors, server errors)
 const LICENSE = 'CC BY-SA 4.0';
-const USER_AGENT = 'snapshot-script/1.0';
+const USER_AGENT = 'alexandrpedia snapshot importer/1.0 (+https://github.com/h1ddenpr0cess20/alexandrpedia)';
 const dir = new URL('../data/wikipedia/', import.meta.url);
+const entries = allCatalogEntries(CATALOG);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const clock = () => new Date().toISOString().slice(11, 19);
 const exists = (file) => stat(file).then(() => true, () => false);
@@ -35,7 +39,11 @@ async function askWikipedia(title) {
   try {
     const res = await fetch(`https://en.wikipedia.org/w/api.php?${params}`, { headers: { 'User-Agent': USER_AGENT } });
     if (res.status === 429 || res.status === 503) {
-      return { kind: 'limited', status: res.status, retryAfter: Number(res.headers.get('retry-after')) || 0 };
+      return {
+        kind: 'limited',
+        status: res.status,
+        retryAfterMs: parseRetryAfter(res.headers.get('retry-after')),
+      };
     }
     if (!res.ok) return { kind: 'failed', message: `HTTP ${res.status}` };
     const page = (await res.json())?.query?.pages?.[0];
@@ -58,7 +66,7 @@ async function askWikipedia(title) {
 let lastStart = 0;
 let limitStreak = 0;
 
-/** Waits until a minute has passed since the last request started. */
+/** Waits for the short normal gap between successful requests. */
 async function turn() {
   const wait = lastStart + GAP_MS - Date.now();
   if (wait > 0) await sleep(wait);
@@ -74,8 +82,13 @@ async function obtain(title, label) {
     if (answer.kind === 'limited') {
       limitStreak++;
       if (limitStreak >= MAX_RATE_LIMITS) return null;
-      const pause = Math.max(BACKOFF_MS, answer.retryAfter * 1000);
-      console.log(`${clock()} HTTP ${answer.status} on ${label}; waiting ${pause / 60_000} min`);
+      const pause = retryDelayMs({
+        streak: limitStreak,
+        retryAfterMs: answer.retryAfterMs,
+        baseMs: BACKOFF_BASE_MS,
+        maxMs: BACKOFF_MAX_MS,
+      });
+      console.log(`${clock()} HTTP ${answer.status} on ${label}; cooling down ${Math.ceil(pause / 1000)}s before retrying`);
       await sleep(pause);
       continue;
     }
@@ -92,11 +105,11 @@ await mkdir(dir, { recursive: true });
 const saved = [], kept = [], missing = [], failed = [];
 let stopped = false;
 
-for (const [i, entry] of CATALOG.entries()) {
+for (const [i, entry] of entries.entries()) {
   const title = entry.titles?.wikipedia ?? entry.title;
   const name = `${encodeURIComponent(slugOf(title))}.json`;
   const file = new URL(name, dir);
-  const label = `[${i + 1}/${CATALOG.length}] ${entry.title}`;
+  const label = `[${i + 1}/${entries.length}] ${entry.title}`;
   if (await exists(file)) { kept.push(entry.title); continue; }
 
   const answer = await obtain(title, label);

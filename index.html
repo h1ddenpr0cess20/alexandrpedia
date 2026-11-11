@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Alexandrpedia</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <style>
       :root { --bg: #0b0e1d; --text: #e8e6e1; --dim: #9aa0b2; }
       * { box-sizing: border-box; }
@@ -11,6 +12,9 @@
       body { overflow: hidden; }
       #host { position: fixed; inset: 0; }
       #status { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); max-width: min(680px, 92vw); padding: 8px 14px; background: rgba(11, 14, 29, 0.78); border: 1px solid #262c3a; border-radius: 8px; text-align: center; pointer-events: none; }
+      #controls { position: fixed; top: 12px; right: 16px; z-index: 5; display: flex; align-items: center; gap: 14px; padding: 6px 10px; background: rgba(11, 14, 29, 0.78); border: 1px solid #262c3a; border-radius: 8px; font-size: 14px; cursor: pointer; user-select: none; }
+      #controls label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+      #controls select { font: inherit; background: #151a2a; color: inherit; border: 1px solid #262c3a; border-radius: 4px; }
       #host canvas { display: block; cursor: grab; }
       #hint { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); color: var(--dim); font-size: 13px; pointer-events: none; white-space: nowrap; }
       h1 { position: fixed; top: 12px; left: 16px; margin: 0; font: normal 18px Georgia, serif; letter-spacing: 0.03em; pointer-events: none; }
@@ -35,7 +39,11 @@
     <div id="host"></div>
     <h1>Alexandrpedia</h1>
     <div id="status" hidden></div>
-    <div id="hint">Click a book to read it · click a page's side to turn it · Esc puts it back · drag to look around, right-drag or Shift-drag to pan, scroll or pinch to zoom, double-click to reset</div>
+    <div id="controls">
+      <label><input type="checkbox" id="people-toggle"> People</label>
+      <label>Quality <select id="quality"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+    </div>
+    <div id="hint">Click a book to read it · click a page's side to turn it · Esc puts it back · drag to look around, right-drag or Shift-drag to pan, W/A/S/D to walk (hold Shift to go faster), scroll or pinch to zoom, double-click to reset</div>
     <script type="module" src="./src/app.js"></script>
   </body>
 </html>
