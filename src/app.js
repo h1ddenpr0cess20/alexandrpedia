@@ -481,6 +481,20 @@ function bookShadows(book, on) {
 if (!quality.shelfShadows) for (const record of books.values()) bookShadows(record.book, false);
 
 /**
+ * A shut book on a shelf is skipped when it is out of view. The engine never culls a book (its pages
+ * bend past their bounds as they turn), so all 646 covers were drawn every frame, seen or not. Books
+ * in view are drawn at full quality; the open book is never culled.
+ */
+function shelfCulling(book, on) {
+  book.group.traverse((node) => {
+    if (!node.isMesh) return;
+    if (on) node.geometry.computeBoundingSphere(); // the shut shape, fresh each time it is shelved
+    node.frustumCulled = on;
+  });
+}
+for (const record of books.values()) shelfCulling(record.book, true);
+
+/**
  * Everything that never moves (room, shelves, furniture, rugs) stops recomputing its matrix
  * every frame. Books keep updating: they are taken down, opened, turned and put back.
  */
@@ -724,23 +738,6 @@ function focusOn(point) { focus.copy(point); panned.set(0, 0, 0); }
 let reading = null;       // the record of the book on the table, if any
 const moving = new Set(); // books that are opening or closing
 
-function readingPlace(record) {
-  const sourceIndex = SOURCES_IN_ORDER.indexOf(record.source.id);
-  const bookHeight = DESK_HEIGHT + 0.42;
-  if (record.sectionId === 'ai') {
-    const side = sourceIndex === 0 ? 'left' : 'right';
-    const placement = centerLongTablePlacement({ side });
-    const table = pointInBay(AI_BAY, placement.x, placement.z, bookHeight);
-    return { position: table };
-  }
-  const nook = wallReadingNookPlacement({
-    roomHalf: ROOM_HALF,
-    sectionId: record.sectionId,
-    sourceIndex,
-  });
-  return { position: new GFX.Vector3(nook.table.x, bookHeight, nook.table.z) };
-}
-
 // The open book travels with you: it stays at the point you look at as you move.
 function holdBook(book) {
   book.group.position.copy(GOAL); // where the view is headed: the table at first, then wherever you move
@@ -750,14 +747,35 @@ function takeDown(record) {
   const { book, home } = record;
   book.build();   // the leaves, the first time the book is wanted
   bookShadows(book, true);
+  shelfCulling(book, false);
   home.parent.remove(book.group);
   scene.add(book.group);
   book.group.quaternion.copy(READ_UPRIGHT);
   book.group.scale.setScalar(1);
   reading = record;
   moving.add(record);
-  focusOn(readingPlace(record).position); // as on main: the view glides to the book's table
-  book.group.position.copy(readingPlace(record).position);
+  // Open it right where you stand: straight ahead, at your current viewing distance. If a shelf
+  // or wall is nearer than that, it stops short of it instead of opening inside it.
+  const spot = openingSpot();
+  focusOn(spot);
+  stage.target.copy(spot);
+  stage.view.zoomBy(camera.position.distanceTo(spot) / LENS_DISTANCE / stage.view.aim.zoom);
+  book.group.position.copy(spot);
+}
+
+const LENS_DISTANCE = 7.5; // the stage's lens distance
+const BOOK_CLEARANCE = 0.4; // metres kept between the open book and anything behind it
+const AHEAD = new GFX.Vector3();
+const blocker = new GFX.Raycaster();
+function openingSpot() {
+  camera.updateMatrixWorld();
+  AHEAD.copy(stage.target).sub(camera.position);
+  let distance = AHEAD.length();
+  AHEAD.normalize();
+  blocker.set(camera.position, AHEAD);
+  const hit = blocker.intersectObjects(scene.children, true).find((h) => !byGroup.has(h.object) && h.distance > 0.05);
+  if (hit && hit.distance - BOOK_CLEARANCE < distance) distance = Math.max(0.5, hit.distance - BOOK_CLEARANCE);
+  return camera.position.clone().addScaledVector(AHEAD, distance);
 }
 
 function putBack(record) {
@@ -769,6 +787,7 @@ function putBack(record) {
   book.group.quaternion.copy(home.quaternion);
   book.group.scale.copy(home.scale);
   if (!quality.shelfShadows) bookShadows(book, false);
+  shelfCulling(book, true);
   moving.delete(record);
   if (reading === record) reading = null;
   focusOn(SHELF_TARGET);
