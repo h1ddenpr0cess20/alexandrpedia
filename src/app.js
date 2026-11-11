@@ -457,6 +457,10 @@ const BOOK_PAGE_WIDTH = 0.30;
 const BOOK_BASE_HEIGHT = 0.42;
 const BOOK_LEAF_PITCH = 0.0006;
 
+// The committed articles average about 32 printed pages (median 31; most between 10 and 52), and every book
+// gets four blank pages at the back: a shelf copy has that many blank pages, so it is as thick as a typical book.
+const SHELF_PAGE_COUNT = pageCountForBook(32);
+
 const SECTION_CATALOGS = catalogsForSections(CATALOG);
 const missingSnapshots = [];
 
@@ -479,7 +483,8 @@ for (const [sectionId, catalog] of Object.entries(SECTION_CATALOGS)) {
       const title = titles[entry.title];
       const originalSize = stock[index].size;
       const bookOptions = {
-        ...stock[index], // its placeholder page count gives the shelf copy its thickness
+        ...stock[index],
+        pageCount: SHELF_PAGE_COUNT, // blank placeholder pages, as thick as an average article's book
         title,
         subtitle: `${source.name} · ${entry.shelf ?? entry.kind}`,
         print: source.print,
