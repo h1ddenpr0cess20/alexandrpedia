@@ -69,7 +69,6 @@ npm run update-articles
 - `src/app.js`: the room, the views and the controls.
 - `src/room-layout.js`: where the bookcases, tables, chairs and books stand.
 - `src/room-plan.js`, `src/walk-paths.js`, `src/readers.js`: where readers sit, the routes they walk round the furniture, and what they do (a state machine that knows nothing of the scene).
-- `src/page-block.js`: the block of paper in each shelved book. A shelved book is a cover and one box, not a mesh to every leaf, and its cover is drawn in full (painted at full size) only while you are near it; further off it is a plain box in the colour of its cloth.
 - `src/catalog.js`, `src/sections.js`, `src/library.js`: the curated titles and their snapshots.
 - `src/rug.js`: the Persian rugs.
 - `madness-engine` (npm dependency, in `node_modules/`): the engine that draws the room and its props.

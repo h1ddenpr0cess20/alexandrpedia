@@ -13,7 +13,7 @@ import { createStage } from 'madness-engine/stage';
 import { paintRoom } from 'madness-engine/textures/rooms/studio';
 import { defineView } from 'madness-engine/view';
 import { createBookcase, stockBooks } from 'madness-engine/props/bookcase';
-import { createBook, PAPERS } from 'madness-engine/props/book';
+import { createBook } from 'madness-engine/props/book';
 import { createHuman, FIGURES } from 'madness-engine/people';
 import { createWoodTable } from 'madness-engine/props/wood-table';
 import { createWoodChair } from 'madness-engine/props/wood-chair';
@@ -25,7 +25,6 @@ import { SOURCES } from './sources.js';
 import { loadArticle, MAX_PAGES, pageCountForBook } from './library.js';
 import { flowPages } from 'madness-engine/props/book-art';
 import { shelveBooksByPriority } from './shelving.js';
-import { pageBlockBox } from './page-block.js';
 import { createNavigator } from './walk-paths.js';
 import { readerSeats, walkObstacles } from './room-plan.js';
 import { READER, createReaders } from './readers.js';
@@ -462,42 +461,11 @@ const BOOK_PAGE_WIDTH = 0.30;
 const BOOK_BASE_HEIGHT = 0.42;
 const BOOK_LEAF_PITCH = 0.0006;
 
-// A shelved book is its cover and one block of paper between the boards (see page-block.js for why), and its
-// cover is drawn in full only while you are near it: every cover is 13,000 triangles and a texture, and there are
-// 924 of them, but from across the room a spine is a few pixels of its cloth's colour. So a book also has a plain
-// box, in the colour of its cloth, which stands in for it at a distance (see updateShelfLod).
-const SHELF = {
-  box: new GFX.BoxGeometry(1, 1, 1),
-  paper: new GFX.MeshStandardMaterial({ name: 'shelf_paper_block', color: '#d9caa9', roughness: 0.92, metalness: 0 }),
-  cloths: new Map(), // cloth colour -> the material every far book of that cloth shares
-};
-function clothMaterial(cloth) {
-  if (!SHELF.cloths.has(cloth)) SHELF.cloths.set(cloth, new GFX.MeshStandardMaterial({ name: 'shelf_cloth', color: cloth, roughness: 0.78, metalness: 0 }));
-  return SHELF.cloths.get(cloth);
-}
-function boxMesh(name, { min, max }, material) {
-  const mesh = new GFX.Mesh(SHELF.box, material);
-  mesh.name = name;
-  mesh.position.set(...min.map((v, k) => (v + max[k]) / 2));
-  mesh.scale.set(...max.map((v, k) => v - min[k]));
-  mesh.castShadow = mesh.receiveShadow = true;
-  return mesh;
-}
-/** Gives a shelf book its paper block and its far box; it starts far, with its cover out of sight. */
-function addShelfParts(book, cloth) {
-  const block = boxMesh('book_page_block', pageBlockBox(book.dimensions.closed), SHELF.paper);
-  const far = boxMesh('book_far', book.dimensions.closed, clothMaterial(cloth));
-  block.visible = false;
-  book.cover.mesh.visible = false;
-  book.group.add(block, far);
-  return { block, far };
-}
-
 const SECTION_CATALOGS = catalogsForSections(CATALOG);
 const missingSnapshots = [];
 
 // The shelves are built from titles and page counts alone (data/manifest.json, written by npm run build-manifest). A book on a
-// shelf is a cover as thick as its article will be; its article is fetched only when it is opened.
+// shelf is a whole book with blank placeholder pages; its article is fetched only when it is opened.
 const MANIFEST = await (await fetch(new URL('../data/manifest.json', import.meta.url))).json();
 
 for (const [sectionId, catalog] of Object.entries(SECTION_CATALOGS)) {
@@ -528,13 +496,10 @@ for (const [sectionId, catalog] of Object.entries(SECTION_CATALOGS)) {
         textureSize: 512,
         bump: false,
       };
-      // The cover at the thickness of its article, with a block of paper in it: the words are written, and the
-      // leaves built, only once it is pulled from the shelf (see select).
-      // Its cover is painted small (the engine's 'low') until you come near: see updateShelfLod.
-      const book = createBook(GFX, { ...bookOptions, size: BOOK_SCALE, shell: true, coverDetail: 'low' });
+      // A whole book with blank pages: its words are written only once it is pulled from the shelf (see select).
+      const book = createBook(GFX, { ...bookOptions, size: BOOK_SCALE });
       const record = {
         entry, source, title, book, shelfBook: book, bookOptions,
-        parts: addShelfParts(book, bookOptions.cloth), near: false, center: null,
         key: `${sectionId}:${sourceId}:${keyOf(entry)}`,
         sectionId, home: null,
       };
@@ -608,65 +573,6 @@ function freezeStatic(node) {
 }
 scene.updateMatrixWorld(true);
 for (const child of scene.children) freezeStatic(child);
-
-// ———————————————————————————————————————————— shelf books, near and far
-
-// Books close to you are drawn in full: the cover, with its title and foil painted at full size, and the block of
-// paper in it. The rest are a plain box in the colour of their cloth. A cover painted small costs next to nothing,
-// and one painted full is made when you come near (a few a frame, so nothing stalls) and let go when you go away.
-const NEAR_DISTANCE = 3.0; // metres from the eye
-const FAR_DISTANCE = 3.6;  // a book stays drawn in full until it is this far, so that none flickers at the edge
-const MAX_NEAR = 150;      // drawn in full at once, at most
-const UPGRADES_A_UPDATE = 3;
-const LOD_EVERY = 200;     // milliseconds between looks at which books are near
-let shelved = null;        // the records that stand on a shelf
-let nearCount = 0;
-let lodClock = -Infinity;
-let lodPending = true;
-const LOOK = new GFX.Vector3();
-const TO_BOOK = new GFX.Vector3();
-
-function setNear(record, near) {
-  if (record.near === near) return;
-  record.near = near;
-  nearCount += near ? 1 : -1;
-  record.parts.far.visible = !near;
-  record.parts.block.visible = near;
-  record.shelfBook.cover.mesh.visible = near;
-  record.shelfBook.setCoverDetail(near ? 'full' : 'low');
-}
-
-/** Draws in full the books near the eye (and in front of it), and the rest plain. */
-function updateShelfLod(now) {
-  lodClock = now;
-  if (!shelved) {
-    shelved = [];
-    for (const record of books.values()) {
-      if (record.shelfBook.group.parent !== record.home.parent) continue; // (one that did not fit on a shelf)
-      record.center = record.home.parent.localToWorld(record.home.position.clone());
-      shelved.push(record);
-    }
-  }
-  const eye = camera.position;
-  LOOK.copy(stage.target).sub(eye).normalize();
-  const wanted = [];
-  for (const record of shelved) {
-    TO_BOOK.copy(record.center).sub(eye);
-    const distance = TO_BOOK.length();
-    const ahead = distance > 0 ? TO_BOOK.dot(LOOK) / distance : 1; // 1 straight ahead, -1 behind
-    if (record.near) { if (distance > FAR_DISTANCE || ahead < -0.5) setNear(record, false); }
-    else if (distance < NEAR_DISTANCE && ahead > -0.2) wanted.push([distance, record]);
-  }
-  wanted.sort((p, q) => p[0] - q[0]);
-  let made = 0;
-  for (const [, record] of wanted) {
-    if (made === UPGRADES_A_UPDATE || nearCount >= MAX_NEAR) break;
-    setNear(record, true);
-    made++;
-  }
-  // More to do next time, if some that are wanted are still to be made.
-  lodPending = made < wanted.length && nearCount < MAX_NEAR;
-}
 
 // ———————————————————————————————————————————— readers: people who come in, take books down and read them
 
@@ -1372,11 +1278,9 @@ renderer.setAnimationLoop((now) => {
   stage.target.lerp(GOAL, 1 - Math.exp(-10 * dt));
   view.step(dt);
   if (animateReaders(now / 1000)) dirty = true;
-  if (lodPending && now - lodClock > LOD_EVERY) dirty = true; // (books to be made full as you come near, even if you have stopped)
   if (!dirty) return;
   dirty = false;
   stage.look();   // place the camera on the target, from the view
-  if (now - lodClock > LOD_EVERY) updateShelfLod(now);
   if (reading) holdBook(reading.book); // the open book travels with you
   stage.render();
   if (!shown) { shown = true; loading.classList.add('done'); setTimeout(() => loading.remove(), 800); }
