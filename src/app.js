@@ -550,6 +550,78 @@ function shelfCulling(book, on) {
     node.frustumCulled = on;
   });
 }
+
+// ——— covers: on the graphics card, and off the canvas
+
+// A cover is painted on a canvas, and the canvas stays alive as the texture's image for as long as the book does:
+// about 2 MB of memory for each of 924 books (measured: 3.0 GB of renderer memory for the covers alone, 1.3 GB
+// without their canvases), though the graphics card has its own copy as soon as the book has been drawn once. So
+// every shelf book is drawn once, here, behind the loading screen (a book that is out of view is otherwise not
+// drawn, and not uploaded, until you turn to it), and each canvas is let go as soon as the renderer says it has
+// the cover. Nothing about how a book looks changes.
+const heldCovers = new Set(Array.from(books.values()));
+const coverMap = (record) => record.shelfBook.cover.material.map;
+let coverBackend = null;
+
+/** Lets go of the canvas of every cover the renderer has a copy of (at this version of the texture). */
+function releaseCovers() {
+  const textures = renderer.backend?.textures;
+  if (!textures) return;
+
+  for (const record of heldCovers) {
+    const map = coverMap(record);
+    const have = textures.get(map);
+    if (!map.image) { heldCovers.delete(record); continue; }
+    if (!have || have.version !== map.version) continue; // not drawn yet: keep it
+    const canvas = map.image;
+    map.image = null;
+    if (canvas.width) { canvas.width = 0; canvas.height = 0; } // (the pixels go now, not whenever it is collected)
+    heldCovers.delete(record);
+    record.coverLetGo = true;
+  }
+}
+
+/** Paints again the covers that were let go: the renderer's graphics have been replaced (a lost device), so it has none of ours. */
+function repaintCovers() {
+  for (const record of books.values()) {
+    if (!record.coverLetGo) continue;
+    record.coverLetGo = false;
+    record.shelfBook.setCoverDetail('low'); // (a cover is repainted only when its detail changes)
+    record.shelfBook.setCoverDetail('full');
+    heldCovers.add(record);
+  }
+  wake();
+}
+
+let coverClock = 0;
+/** Called each frame: notices new graphics, and lets go of covers as they are drawn. */
+function tendCovers(now) {
+  if (renderer.backend !== coverBackend) {
+    if (coverBackend) repaintCovers();
+    coverBackend = renderer.backend;
+  }
+  if (heldCovers.size && now - coverClock > 1000) { coverClock = now; releaseCovers(); }
+}
+
+/**
+ * Has the renderer copy every shelf book's cover to the graphics card now, without drawing a frame. (Its own
+ * `_texture` is what the renderer calls the first time it draws a book; there is no public way to ask. If it is
+ * ever not there, nothing is uploaded, no canvas is let go, and the covers go to the card as books come into view.)
+ */
+function uploadCovers() {
+  const backend = renderer.backend;
+  if (typeof backend?._texture !== 'function') return;
+  for (const record of books.values()) {
+    if (!record.shelfBook.group.parent) continue; // (a book that did not fit on a shelf is never drawn)
+    try { backend._texture(coverMap(record)); } catch (error) { console.warn('Could not upload a cover early:', error); return; }
+  }
+}
+
+await loadingStep('Putting the covers on the shelves…');
+coverBackend = renderer.backend;
+uploadCovers();
+releaseCovers();
+
 for (const record of books.values()) shelfCulling(record.book, true);
 
 /**
@@ -1278,6 +1350,7 @@ renderer.setAnimationLoop((now) => {
   stage.target.lerp(GOAL, 1 - Math.exp(-10 * dt));
   view.step(dt);
   if (animateReaders(now / 1000)) dirty = true;
+  tendCovers(now);
   if (!dirty) return;
   dirty = false;
   stage.look();   // place the camera on the target, from the view
