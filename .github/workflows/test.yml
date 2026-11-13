@@ -23,6 +23,9 @@ jobs:
       - name: Check JavaScript syntax
         run: |
           node --check src/app.js
+          node --check src/readers.js
+          node --check src/walk-paths.js
+          node --check src/room-plan.js
           node --check src/sections.js
           node --check scripts/check-titles.mjs
           node --check scripts/snapshot-wikipedia.mjs
